@@ -4672,8 +4672,6 @@ dnl BeOS support removed after SDL 2.0.1. Haiku still works.  --ryan.
         EXTRA_CFLAGS="$EXTRA_CFLAGS -isystem${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include -D__SWITCH__=1"
         EXTRA_CFLAGS="$EXTRA_CFLAGS -g -O2 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -ftls-model=local-exec"
         CheckDeclarationAfterStatement
-        CheckDiskAudio
-        CheckDummyAudio
 
         # Set up files for the video library
         if test x$enable_video = xyes; then
