@@ -4669,8 +4669,9 @@ dnl BeOS support removed after SDL 2.0.1. Haiku still works.  --ryan.
         ;;
     aarch64-none-elf*)
         ARCH=switch
-        EXTRA_CFLAGS="$EXTRA_CFLAGS -isystem${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include -D__SWITCH__=1"
-        EXTRA_CFLAGS="$EXTRA_CFLAGS -g -O2 -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -ftls-model=local-exec"
+        SDL_CFLAGS="$SDL_CFLAGS -isystem ${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include -D__SWITCH__=1 -march=armv8-a -mtune=cortex-a57 -mtp=soft -ftls-model=local-exec"
+        SDL_LIBS="-march=armv8-a  -fPIC -specs=${DEVKITPRO}/libnx/switch.specs -L${DEVKITPRO}/portlibs/switch/lib $SDL_LIBS  -L${DEVKITPRO}/libnx/lib -lnx"
+        EXTRA_CFLAGS="$EXTRA_CFLAGS -g -O2 $SDL_CFLAGS -fPIC"
         CheckDeclarationAfterStatement
 
         # Set up files for the video library
