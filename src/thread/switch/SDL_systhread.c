@@ -91,7 +91,7 @@ int SDL_SYS_SetThreadPriority(SDL_ThreadPriority priority)
         value = 0x2D;
     }
     else if (priority == SDL_THREAD_PRIORITY_HIGH) {
-        value = 0x2B;
+        value = 0x1C;
     }
 
     svcSetThreadPriority(CUR_THREAD_HANDLE, value);
