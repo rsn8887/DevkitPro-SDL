@@ -4234,7 +4234,7 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
         ARCH=switch
         SDL_CFLAGS="$SDL_CFLAGS -isystem ${DEVKITPRO}/libnx/include -I${DEVKITPRO}/portlibs/switch/include -D__SWITCH__ -march=armv8-a -mtune=cortex-a57 -mtp=soft -ftls-model=local-exec"
         EXTRA_CFLAGS="$EXTRA_CFLAGS -g -O2 $SDL_CFLAGS -fPIC"
-        EXTRA_LDFLAGS="-march=armv8-a -fPIE -specs=${DEVKITPRO}/libnx/switch.specs -L${DEVKITPRO}/libnx/lib -lnx"
+        EXTRA_LDFLAGS="-march=armv8-a -fPIE -L${DEVKITPRO}/libnx/lib -lnx"
         CheckDeclarationAfterStatement
 
         # Set up files for the video library
