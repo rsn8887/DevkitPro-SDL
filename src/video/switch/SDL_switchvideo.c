@@ -23,122 +23,319 @@
 
 #if SDL_VIDEO_DRIVER_SWITCH
 
-/* SDL internals */
-#include "../SDL_sysvideo.h"
-#include "../../events/SDL_keyboard_c.h"
-#include "../../events/SDL_windowevents_c.h"
-#include "SDL_switchtouch.h"
-
 #include <switch.h>
 
-#define SWITCH_DATA "_SDL_SwitchData"
-#define SCREEN_WIDTH    1280
-#define SCREEN_HEIGHT   720
+#include "../SDL_sysvideo.h"
+#include "../../render/SDL_sysrender.h"
+#include "../../events/SDL_keyboard_c.h"
+#include "../../events/SDL_mouse_c.h"
+#include "../../events/SDL_windowevents_c.h"
 
-typedef struct
-{
-    SDL_Surface *surface;
-    int x_offset;
-    int y_offset;
-} SWITCH_WindowData;
+#include "SDL_switchvideo.h"
+#include "SDL_switchopengles.h"
+#include "SDL_switchtouch.h"
 
-static int SWITCH_VideoInit(_THIS);
-
-static int SWITCH_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode);
-
-static void SWITCH_VideoQuit(_THIS);
-
-static void SWITCH_PumpEvents(_THIS);
-
-static int SWITCH_CreateWindowFramebuffer(_THIS, SDL_Window *window, Uint32 *format, void **pixels, int *pitch);
-
-static int SWITCH_UpdateWindowFramebuffer(_THIS, SDL_Window *window, const SDL_Rect *rects, int numrects);
-
-static void SWITCH_DestroyWindowFramebuffer(_THIS, SDL_Window *window);
-
-static int SWITCH_Available(void)
+static int
+SWITCH_Available(void)
 {
     return 1;
 }
 
-static void SWITCH_DeleteDevice(SDL_VideoDevice *device)
+static void
+SWITCH_Destroy(SDL_VideoDevice *device)
 {
-    SDL_free(device);
+    if (device) {
+        SDL_free(device);
+    }
 }
 
-static SDL_VideoDevice *SWITCH_CreateDevice(int devindex)
+static SDL_VideoDevice *
+SWITCH_CreateDevice(int devindex)
 {
     SDL_VideoDevice *device;
 
+    /* Initialize SDL_VideoDevice structure */
     device = (SDL_VideoDevice *) SDL_calloc(1, sizeof(SDL_VideoDevice));
-    if (!device) {
+    if (device == NULL) {
         SDL_OutOfMemory();
         return NULL;
     }
 
+    /* Setup amount of available displays */
+    device->num_displays = 0;
+
+    /* Set device free function */
+    device->free = SWITCH_Destroy;
+
+    /* Setup all functions which we can handle */
     device->VideoInit = SWITCH_VideoInit;
     device->VideoQuit = SWITCH_VideoQuit;
+    device->GetDisplayModes = SWITCH_GetDisplayModes;
     device->SetDisplayMode = SWITCH_SetDisplayMode;
-    device->PumpEvents = SWITCH_PumpEvents;
-    device->CreateWindowFramebuffer = SWITCH_CreateWindowFramebuffer;
-    device->UpdateWindowFramebuffer = SWITCH_UpdateWindowFramebuffer;
-    device->DestroyWindowFramebuffer = SWITCH_DestroyWindowFramebuffer;
+    device->CreateSDLWindow = SWITCH_CreateWindow;
+    device->CreateSDLWindowFrom = SWITCH_CreateWindowFrom;
+    device->SetWindowTitle = SWITCH_SetWindowTitle;
+    device->SetWindowIcon = SWITCH_SetWindowIcon;
+    device->SetWindowPosition = SWITCH_SetWindowPosition;
+    device->SetWindowSize = SWITCH_SetWindowSize;
+    device->ShowWindow = SWITCH_ShowWindow;
+    device->HideWindow = SWITCH_HideWindow;
+    device->RaiseWindow = SWITCH_RaiseWindow;
+    device->MaximizeWindow = SWITCH_MaximizeWindow;
+    device->MinimizeWindow = SWITCH_MinimizeWindow;
+    device->RestoreWindow = SWITCH_RestoreWindow;
+    device->SetWindowGrab = SWITCH_SetWindowGrab;
+    device->DestroyWindow = SWITCH_DestroyWindow;
 
-    device->free = SWITCH_DeleteDevice;
+    device->GL_LoadLibrary = SWITCH_GLES_LoadLibrary;
+    device->GL_GetProcAddress = SWITCH_GLES_GetProcAddress;
+    device->GL_UnloadLibrary = SWITCH_GLES_UnloadLibrary;
+    device->GL_CreateContext = SWITCH_GLES_CreateContext;
+    device->GL_MakeCurrent = SWITCH_GLES_MakeCurrent;
+    device->GL_SetSwapInterval = SWITCH_GLES_SetSwapInterval;
+    device->GL_GetSwapInterval = SWITCH_GLES_GetSwapInterval;
+    device->GL_SwapWindow = SWITCH_GLES_SwapWindow;
+    device->GL_DeleteContext = SWITCH_GLES_DeleteContext;
+    device->GL_DefaultProfileConfig = SWITCH_GLES_DefaultProfileConfig;
+    device->GL_GetDrawableSize = SWITCH_GLES_GetDrawableSize;
+
+    device->PumpEvents = SWITCH_PumpEvents;
 
     return device;
 }
 
 VideoBootStrap SWITCH_bootstrap = {
-    "Switch", "Video driver for Nintendo Switch (libnx)",
-    SWITCH_Available, SWITCH_CreateDevice
+    "Switch",
+    "OpenGL ES2 video driver for Nintendo Switch",
+    SWITCH_Available,
+    SWITCH_CreateDevice
 };
 
-static int SWITCH_VideoInit(_THIS)
+/*****************************************************************************/
+/* SDL Video and Display initialization/handling functions                   */
+/*****************************************************************************/
+int
+SWITCH_VideoInit(_THIS)
 {
-    SDL_DisplayMode mode;
+    SDL_VideoDisplay display;
+    SDL_DisplayMode current_mode;
+    SDL_DisplayData *data;
+    SDL_DisplayModeData *mdata;
 
-    gfxInitResolution(SCREEN_WIDTH, SCREEN_HEIGHT);
-    gfxInitDefault();
-    gfxSetMode(GfxMode_TiledDouble);
+    SDL_zero(current_mode);
+    current_mode.w = 1280;
+    current_mode.h = 720;
+    current_mode.refresh_rate = 60;
+    current_mode.format = SDL_PIXELFORMAT_RGBA8888;
+    mdata = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
+    mdata->padding = 0;
+    current_mode.driverdata = mdata;
 
-    // add default mode (1280x720)
-    mode.format = SDL_PIXELFORMAT_ABGR8888;
-    mode.w = SCREEN_WIDTH;
-    mode.h = SCREEN_HEIGHT;
-    mode.refresh_rate = 60;
-    mode.driverdata = NULL;
-    if (SDL_AddBasicVideoDisplay(&mode) < 0) {
-        return -1;
+    SDL_zero(display);
+    display.desktop_mode = current_mode;
+    display.current_mode = current_mode;
+
+    /* Allocate display internal data */
+    data = (SDL_DisplayData *) SDL_calloc(1, sizeof(SDL_DisplayData));
+    if (data == NULL) {
+        return SDL_OutOfMemory();
     }
-    SDL_AddDisplayMode(&_this->displays[0], &mode);
+    data->egl_display = EGL_DEFAULT_DISPLAY;
+    display.driverdata = data;
 
-    // allow any resolution
-    mode.w = 0;
-    mode.h = 0;
-    SDL_AddDisplayMode(&_this->displays[0], &mode);
+    SDL_AddVideoDisplay(&display);
 
     // init touch
     SWITCH_InitTouch();
 
-    return 0;
+    return 1;
 }
 
-static void SWITCH_VideoQuit(_THIS)
+void
+SWITCH_VideoQuit(_THIS)
 {
+    // exit touch
     SWITCH_QuitTouch();
-    gfxExit();
 }
 
-static int SWITCH_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
+void
+SWITCH_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
 {
-    SDL_SendWindowEvent(display->fullscreen_window,
-                        SDL_WINDOWEVENT_RESIZED, mode->w, mode->h);
+    SDL_DisplayMode mode;
+    SDL_DisplayModeData *data;
+
+    // 1920x1080 (16/9) 16RGBA8888
+    if (appletGetOperationMode() == AppletOperationMode_Docked) {
+        SDL_zero(mode);
+        mode.w = 1920;
+        mode.h = 1080;
+        mode.refresh_rate = 60;
+        mode.format = SDL_PIXELFORMAT_RGBA8888;
+        data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
+        data->padding = 0;
+        mode.driverdata = data;
+        SDL_AddDisplayMode(display, &mode);
+    }
+
+    // 1280x720 (16/9) RGBA8888
+    SDL_AddDisplayMode(display, &display->current_mode);
+
+    // 960x540 (16/9) RGBA8888
+    SDL_zero(mode);
+    mode.w = 960;
+    mode.h = 540;
+    mode.refresh_rate = 60;
+    mode.format = SDL_PIXELFORMAT_RGBA8888;
+    data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
+    data->padding = 0;
+    mode.driverdata = data;
+    SDL_AddDisplayMode(display, &mode);
+
+    // 800x600 (4/3) RGBA8888
+    SDL_zero(mode);
+    mode.w = 800;
+    mode.h = 600;
+    mode.refresh_rate = 60;
+    mode.format = SDL_PIXELFORMAT_RGBA8888;
+    data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
+    data->padding = (int) ((600.0f * 1.7774f) - 800.0f) / 2;
+    mode.driverdata = data;
+    SDL_AddDisplayMode(display, &mode);
+
+    // 640x480 (4/3) RGBA8888
+    SDL_zero(mode);
+    mode.w = 640;
+    mode.h = 480;
+    mode.refresh_rate = 60;
+    mode.format = SDL_PIXELFORMAT_RGBA8888;
+    data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
+    data->padding = (int) ((480.0f * 1.7774f) - 640.0f) / 2;
+    mode.driverdata = data;
+    SDL_AddDisplayMode(display, &mode);
+}
+
+int
+SWITCH_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
+{
+    SDL_Renderer *renderer = SDL_GetRenderer(_this->windows);
+    SDL_DisplayModeData *data = (SDL_DisplayModeData *) mode->driverdata;
+
+    if (!data) {
+        return -1;
+    }
+
+    gfxConfigureResolution(mode->w + data->padding * 2, mode->h);
+    display->current_mode = *mode;
+    _this->windows->w = mode->w;
+    _this->windows->h = mode->h;
+    if (renderer) {
+        renderer->UpdateViewport(renderer);
+    }
 
     return 0;
 }
 
-static void SWITCH_PumpEvents(_THIS)
+int
+SWITCH_CreateWindow(_THIS, SDL_Window *window)
+{
+    SDL_WindowData *wdata;
+    //SDL_VideoDisplay *display;
+
+    /* Allocate window internal data */
+    wdata = (SDL_WindowData *) SDL_calloc(1, sizeof(SDL_WindowData));
+    if (wdata == NULL) {
+        return SDL_OutOfMemory();
+    }
+
+    window->flags |= SDL_WINDOW_FULLSCREEN;
+
+    if (!_this->egl_data) {
+        return SDL_SetError("SWITCH_CreateWindow: EGL not initialized");
+    }
+    wdata->egl_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType) &wdata->egl_surface);
+
+    if (wdata->egl_surface == EGL_NO_SURFACE) {
+        return SDL_SetError("Could not create GLES window surface");
+    }
+
+    /* Setup driver data for this window */
+    window->driverdata = wdata;
+
+    /* One window, it always has focus */
+    SDL_SetMouseFocus(window);
+    SDL_SetKeyboardFocus(window);
+
+    /* Window has been successfully created */
+    return 0;
+}
+
+void
+SWITCH_DestroyWindow(_THIS, SDL_Window *window)
+{
+    SDL_WindowData *data = (SDL_WindowData *) window->driverdata;
+
+    if (data) {
+        if (data->egl_surface != EGL_NO_SURFACE) {
+            SDL_EGL_DestroySurface(_this, data->egl_surface);
+        }
+        SDL_free(data);
+        window->driverdata = NULL;
+    }
+}
+
+int
+SWITCH_CreateWindowFrom(_THIS, SDL_Window *window, const void *data)
+{
+    return -1;
+}
+void
+SWITCH_SetWindowTitle(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_SetWindowIcon(_THIS, SDL_Window *window, SDL_Surface *icon)
+{
+}
+void
+SWITCH_SetWindowPosition(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_SetWindowSize(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_ShowWindow(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_HideWindow(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_RaiseWindow(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_MaximizeWindow(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_MinimizeWindow(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_RestoreWindow(_THIS, SDL_Window *window)
+{
+}
+void
+SWITCH_SetWindowGrab(_THIS, SDL_Window *window, SDL_bool grabbed)
+{
+
+}
+
+void
+SWITCH_PumpEvents(_THIS)
 {
     if (!appletMainLoop()) {
         SDL_Event ev;
@@ -149,121 +346,6 @@ static void SWITCH_PumpEvents(_THIS)
 
     hidScanInput();
     SWITCH_PollTouch();
-}
-
-static void SWITCH_SetResolution(u32 width, u32 height)
-{
-    u32 x, y, w, h, i;
-    u32 *fb;
-
-    // clear framebuffers before switching res
-    for (i = 0; i < 2; i++) {
-
-        fb = (u32 *) gfxGetFramebuffer(&w, &h);
-
-        for (y = 0; y < h; y++) {
-            for (x = 0; x < w; x++) {
-                fb[gfxGetFramebufferDisplayOffset(x, y)] =
-                    (u32) RGBA8_MAXALPHA(0, 0, 0);
-            }
-        }
-
-        gfxFlushBuffers();
-        gfxSwapBuffers();
-        gfxWaitForVsync();
-    }
-
-    gfxConfigureResolution(width, height);
-}
-
-static int SWITCH_CreateWindowFramebuffer(_THIS, SDL_Window *window, Uint32 *format, void **pixels, int *pitch)
-{
-    int bpp;
-    Uint32 r, g, b, a;
-    SDL_Surface *surface;
-    SWITCH_WindowData *data;
-
-    // create sdl surface framebuffer
-    SDL_PixelFormatEnumToMasks(SDL_PIXELFORMAT_ABGR8888, &bpp, &r, &g, &b, &a);
-    surface = SDL_CreateRGBSurface(0, window->w, window->h, bpp, r, g, b, a);
-    if (!surface) {
-        return -1;
-    }
-
-    // hold a pointer to our stuff
-    data = SDL_calloc(1, sizeof(SWITCH_WindowData));
-    data->surface = surface;
-
-    // use switch hardware scaling in fullscreen mode
-    if (window->flags & SDL_WINDOW_FULLSCREEN) {
-        float scaling = (float) window->h / (float) SCREEN_HEIGHT;
-        float w = SDL_min(SCREEN_WIDTH, SCREEN_WIDTH * scaling);
-        // calculate x offset, to respect aspect ratio
-        // round down to multiple of 4 for faster fb writes
-        data->x_offset = ((int) (w - window->w) / 2) & ~3;
-        data->y_offset = 0;
-        SWITCH_SetResolution((u32) w, (u32) window->h);
-        printf("gfxConfigureResolution: %i x %i (window: %i x %i, offset: %i x %i)\n",
-               (int) w, window->h, window->w, window->h, data->x_offset, data->y_offset);
-    }
-    else {
-        data->x_offset = ((SCREEN_WIDTH - window->w) / 2) & ~3;
-        data->y_offset = (SCREEN_HEIGHT - window->h) / 2;
-        SWITCH_SetResolution(0, 0);
-        printf("gfxConfigureResolution: %i x %i (window: %i x %i, offset: %i x %i)\n",
-               1280, 720, window->w, window->h, data->x_offset, data->y_offset);
-    }
-
-    *format = SDL_PIXELFORMAT_ABGR8888;
-    *pixels = surface->pixels;
-    *pitch = surface->pitch;
-
-    SDL_SetWindowData(window, SWITCH_DATA, data);
-
-    // inform SDL we're ready to accept inputs
-    SDL_SetKeyboardFocus(window);
-
-    return 0;
-}
-
-static int SWITCH_UpdateWindowFramebuffer(_THIS, SDL_Window *window, const SDL_Rect *rects, int numrects)
-{
-    SWITCH_WindowData *data = (SWITCH_WindowData *) SDL_GetWindowData(window, SWITCH_DATA);
-
-    u32 fb_w, fb_h;
-    int x, y, w = window->w, h = window->h;
-    u32 *src = (u32 *) data->surface->pixels;
-    u32 *dst = (u32 *) gfxGetFramebuffer(&fb_w, &fb_h);
-
-    // prevent fb overflow in case of resolution change outside SDL
-    if (data->x_offset + w > fb_w) {
-        w = fb_w - data->x_offset;
-    }
-    if (data->y_offset + h > fb_h) {
-        h = fb_h - data->y_offset;
-    }
-
-    for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x += 4) {
-            *((u128 *) &dst[gfxGetFramebufferDisplayOffset(
-                (u32) (x + data->x_offset), (u32) (y + data->y_offset))]) =
-                *((u128 *) &src[y * w + x]);
-        }
-    }
-
-    gfxFlushBuffers();
-    gfxSwapBuffers();
-    // TODO: handle SDL_RENDERER_PRESENTVSYNC (SW_RenderDriver not accepting flags)
-    gfxWaitForVsync();
-
-    return 0;
-}
-
-static void SWITCH_DestroyWindowFramebuffer(_THIS, SDL_Window *window)
-{
-    SWITCH_WindowData *data = (SWITCH_WindowData *) SDL_GetWindowData(window, SWITCH_DATA);
-    SDL_FreeSurface(data->surface);
-    SDL_free(data);
 }
 
 #endif /* SDL_VIDEO_DRIVER_SWITCH */
