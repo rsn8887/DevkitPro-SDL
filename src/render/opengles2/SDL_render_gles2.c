@@ -421,6 +421,7 @@ GLES2_CacheProgram(GLES2_RenderData *data, GLES2_ShaderCacheEntry *vertex,
     GLES2_ShaderCacheEntry *shaderEntry;
     GLint linkSuccessful;
 
+<<<<<<< HEAD
     /* Check if we've already cached this program */
     entry = data->program_cache.head;
     while (entry) {
