@@ -23,8 +23,6 @@
 
 #if SDL_VIDEO_DRIVER_SWITCH
 
-#include <switch.h>
-
 #include "../SDL_sysvideo.h"
 #include "../../render/SDL_sysrender.h"
 #include "../../events/SDL_keyboard_c.h"
@@ -121,14 +119,14 @@ SWITCH_VideoInit(_THIS)
     SDL_DisplayMode current_mode;
     SDL_DisplayData *data;
     SDL_DisplayModeData *mdata;
+    Result rc;
 
     SDL_zero(current_mode);
-    current_mode.w = 1280;
-    current_mode.h = 720;
+    current_mode.w = 1920;
+    current_mode.h = 1080;
     current_mode.refresh_rate = 60;
     current_mode.format = SDL_PIXELFORMAT_RGBA8888;
     mdata = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
-    mdata->padding = 0;
     current_mode.driverdata = mdata;
 
     SDL_zero(display);
@@ -140,20 +138,38 @@ SWITCH_VideoInit(_THIS)
     if (data == NULL) {
         return SDL_OutOfMemory();
     }
-    data->egl_display = EGL_DEFAULT_DISPLAY;
-    display.driverdata = data;
 
+    data->egl_display = EGL_DEFAULT_DISPLAY;
+
+    // init vi
+    rc = viInitialize(ViServiceType_Default);
+    if (R_FAILED(rc)) {
+        return SDL_SetError("Could not initialize vi service: 0x%x", rc);
+    }
+
+    rc = viOpenDefaultDisplay(&data->viDisplay);
+    if (R_FAILED(rc)) {
+        return SDL_SetError("Could not open default display: 0x%x", rc);
+    }
+
+    display.driverdata = data;
     SDL_AddVideoDisplay(&display);
 
     // init touch
     SWITCH_InitTouch();
 
-    return 1;
+    return 0;
 }
 
 void
 SWITCH_VideoQuit(_THIS)
 {
+    SDL_DisplayData *data = SDL_GetDisplayDriverData(0);
+    if (data) {
+        viCloseDisplay(&data->viDisplay);
+    }
+    viExit();
+
     // exit touch
     SWITCH_QuitTouch();
 }
@@ -164,52 +180,16 @@ SWITCH_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
     SDL_DisplayMode mode;
     SDL_DisplayModeData *data;
 
-    // 1920x1080 (16/9) 16RGBA8888
-    if (appletGetOperationMode() == AppletOperationMode_Docked) {
-        SDL_zero(mode);
-        mode.w = 1920;
-        mode.h = 1080;
-        mode.refresh_rate = 60;
-        mode.format = SDL_PIXELFORMAT_RGBA8888;
-        data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
-        data->padding = 0;
-        mode.driverdata = data;
-        SDL_AddDisplayMode(display, &mode);
-    }
-
-    // 1280x720 (16/9) RGBA8888
+    // 1920x1080 RGBA8888, default mode
     SDL_AddDisplayMode(display, &display->current_mode);
 
-    // 960x540 (16/9) RGBA8888
+    // 1280x720 RGBA8888
     SDL_zero(mode);
-    mode.w = 960;
-    mode.h = 540;
+    mode.w = 1280;
+    mode.h = 720;
     mode.refresh_rate = 60;
     mode.format = SDL_PIXELFORMAT_RGBA8888;
     data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
-    data->padding = 0;
-    mode.driverdata = data;
-    SDL_AddDisplayMode(display, &mode);
-
-    // 800x600 (4/3) RGBA8888
-    SDL_zero(mode);
-    mode.w = 800;
-    mode.h = 600;
-    mode.refresh_rate = 60;
-    mode.format = SDL_PIXELFORMAT_RGBA8888;
-    data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
-    data->padding = (int) ((600.0f * 1.7774f) - 800.0f) / 2;
-    mode.driverdata = data;
-    SDL_AddDisplayMode(display, &mode);
-
-    // 640x480 (4/3) RGBA8888
-    SDL_zero(mode);
-    mode.w = 640;
-    mode.h = 480;
-    mode.refresh_rate = 60;
-    mode.format = SDL_PIXELFORMAT_RGBA8888;
-    data = (SDL_DisplayModeData *) SDL_calloc(1, sizeof(SDL_DisplayModeData));
-    data->padding = (int) ((480.0f * 1.7774f) - 640.0f) / 2;
     mode.driverdata = data;
     SDL_AddDisplayMode(display, &mode);
 }
@@ -217,19 +197,22 @@ SWITCH_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
 int
 SWITCH_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
 {
-    SDL_Renderer *renderer = SDL_GetRenderer(_this->windows);
-    SDL_DisplayModeData *data = (SDL_DisplayModeData *) mode->driverdata;
+    SDL_WindowData *data;
+    Result rc;
 
-    if (!data) {
-        return -1;
+    if (display->fullscreen_window) {
+        data = (SDL_WindowData *) display->fullscreen_window->driverdata;
+    }
+    else {
+        if (!SDL_GetFocusWindow()) {
+            return SDL_SetError("Could not get window focus");
+        }
+        data = (SDL_WindowData *) SDL_GetFocusWindow()->driverdata;
     }
 
-    gfxConfigureResolution(mode->w + data->padding * 2, mode->h);
-    display->current_mode = *mode;
-    _this->windows->w = mode->w;
-    _this->windows->h = mode->h;
-    if (renderer) {
-        renderer->UpdateViewport(renderer);
+    rc = nwindowSetCrop(&data->nWindow, 0, 0, mode->w, mode->h);
+    if (rc) {
+        return SDL_SetError("Could not set NWindow crop: 0x%x", rc);
     }
 
     return 0;
@@ -238,23 +221,52 @@ SWITCH_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
 int
 SWITCH_CreateWindow(_THIS, SDL_Window *window)
 {
-    SDL_WindowData *wdata;
-    //SDL_VideoDisplay *display;
-
-    /* Allocate window internal data */
-    wdata = (SDL_WindowData *) SDL_calloc(1, sizeof(SDL_WindowData));
+    Result rc;
+    SDL_DisplayData *ddata = SDL_GetDisplayDriverData(0);
+    SDL_WindowData *wdata = (SDL_WindowData *) SDL_calloc(1, sizeof(SDL_WindowData));
     if (wdata == NULL) {
         return SDL_OutOfMemory();
     }
 
-    window->flags |= SDL_WINDOW_FULLSCREEN;
-
     if (!_this->egl_data) {
-        return SDL_SetError("SWITCH_CreateWindow: EGL not initialized");
+        return SDL_SetError("EGL not initialized");
     }
-    wdata->egl_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType) &wdata->egl_surface);
 
+    rc = viCreateLayer(&ddata->viDisplay, &wdata->viLayer);
+    if (R_FAILED(rc)) {
+        return SDL_SetError("Could not create vi layer: 0x%x", rc);
+    }
+
+    rc = viSetLayerScalingMode(&wdata->viLayer, ViScalingMode_FitToLayer);
+    if (R_FAILED(rc)) {
+        viCloseLayer(&wdata->viLayer);
+        return SDL_SetError("Could not set vi scaling mode: 0x%x", rc);
+    }
+
+    rc = nwindowCreateFromLayer(&wdata->nWindow, &wdata->viLayer);
+    if (R_FAILED(rc)) {
+        viCloseLayer(&wdata->viLayer);
+        return SDL_SetError("Could not create NWindow from layer: 0x%x", rc);
+    }
+
+    rc = nwindowSetDimensions(&wdata->nWindow, 1920, 1080);
+    if (R_FAILED(rc)) {
+        nwindowClose(&wdata->nWindow);
+        viCloseLayer(&wdata->viLayer);
+        return SDL_SetError("Could not set NWindow dimensions: 0x%x", rc);
+    }
+
+    rc = nwindowSetCrop(&wdata->nWindow, 0, 0, window->w, window->h);
+    if (R_FAILED(rc)) {
+        nwindowClose(&wdata->nWindow);
+        viCloseLayer(&wdata->viLayer);
+        return SDL_SetError("Could not set NWindow crop: 0x%x", rc);
+    }
+
+    wdata->egl_surface = SDL_EGL_CreateSurface(_this, &wdata->nWindow);
     if (wdata->egl_surface == EGL_NO_SURFACE) {
+        nwindowClose(&wdata->nWindow);
+        viCloseLayer(&wdata->viLayer);
         return SDL_SetError("Could not create GLES window surface");
     }
 
@@ -278,6 +290,8 @@ SWITCH_DestroyWindow(_THIS, SDL_Window *window)
         if (data->egl_surface != EGL_NO_SURFACE) {
             SDL_EGL_DestroySurface(_this, data->egl_surface);
         }
+        nwindowClose(&data->nWindow);
+        viCloseLayer(&data->viLayer);
         SDL_free(data);
         window->driverdata = NULL;
     }
@@ -303,6 +317,8 @@ SWITCH_SetWindowPosition(_THIS, SDL_Window *window)
 void
 SWITCH_SetWindowSize(_THIS, SDL_Window *window)
 {
+    SDL_WindowData *data = (SDL_WindowData *) window->driverdata;
+    nwindowSetCrop(&data->nWindow, 0, 0, window->w, window->h);
 }
 void
 SWITCH_ShowWindow(_THIS, SDL_Window *window)
@@ -331,7 +347,6 @@ SWITCH_RestoreWindow(_THIS, SDL_Window *window)
 void
 SWITCH_SetWindowGrab(_THIS, SDL_Window *window, SDL_bool grabbed)
 {
-
 }
 
 void
