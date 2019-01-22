@@ -30,11 +30,12 @@
 
 struct SDL_PrivateAudioData
 {
-    void *buffer[2];
-    AudioOutBuffer source_buffer[2];
-    AudioOutBuffer *released_buffer;
-    u32 released_count;
-
+    AudioDriver driver;
+    AudioDriverWaveBuf buffer[2];
+    void *buffer_tmp;
+    void *pool;
+    bool audr_device;
+    bool audr_driver;
 };
 
 #endif /* SDL_switchaudio_h_ */
