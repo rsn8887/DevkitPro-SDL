@@ -32,6 +32,8 @@
 #include "SDL_switchvideo.h"
 #include "SDL_switchopengles.h"
 #include "SDL_switchtouch.h"
+#include "SDL_switchkeyboard.h"
+#include "SDL_switchmouse_c.h"
 
 static int
 SWITCH_Available(void)
@@ -157,6 +159,10 @@ SWITCH_VideoInit(_THIS)
 
     // init touch
     SWITCH_InitTouch();
+    //init keyboard
+    SWITCH_InitKeyboard();
+    //init mouse
+    SWITCH_InitMouse();
 
     return 0;
 }
@@ -172,6 +178,10 @@ SWITCH_VideoQuit(_THIS)
 
     // exit touch
     SWITCH_QuitTouch();
+    //exit keyboard
+    SWITCH_QuitKeyboard();
+    //exit mouse
+    SWITCH_QuitMouse();
 }
 
 void
@@ -361,6 +371,8 @@ SWITCH_PumpEvents(_THIS)
 
     hidScanInput();
     SWITCH_PollTouch();
+    SWITCH_PollKeyboard();
+    SWITCH_PollMouse();
 }
 
 #endif /* SDL_VIDEO_DRIVER_SWITCH */
