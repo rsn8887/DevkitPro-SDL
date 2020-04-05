@@ -4704,21 +4704,9 @@ dnl BeOS support removed after SDL 2.0.1. Haiku still works.  --ryan.
         fi
         # Set up files for the timer library
         if test x$enable_timers = xyes; then
-            AC_DEFINE(SDL_TIMER_SWITCH, 1, [ ])
-            SOURCES="$SOURCES $srcdir/src/timer/switch/*.c"
+            AC_DEFINE(SDL_TIMER_UNIX, 1, [ ])
+            SOURCES="$SOURCES $srcdir/src/timer/unix/*.c"
             have_timers=yes
-        fi
-        # Set up files for the system power library
-        if test x$enable_power = xyes; then
-            AC_DEFINE(SDL_POWER_SWITCH, 1, [ ])
-            SOURCES="$SOURCES $srcdir/src/power/switch/*.c"
-            have_power=yes
-        fi
-        # Set up files for the system filesystem library
-        if test x$enable_filesystem = xyes; then
-            AC_DEFINE(SDL_FILESYSTEM_SWITCH, 1, [ ])
-            SOURCES="$SOURCES $srcdir/src/filesystem/switch/*.c"
-            have_filesystem=yes
         fi
         # Set up files for the thread library
         if test x$enable_threads = xyes; then
