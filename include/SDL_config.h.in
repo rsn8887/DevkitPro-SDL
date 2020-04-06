@@ -340,6 +340,7 @@
 #undef SDL_TIMER_DUMMY
 #undef SDL_TIMER_UNIX
 #undef SDL_TIMER_WINDOWS
+#undef SDL_TIMER_SWITCH
 
 /* Enable various video drivers */
 #undef SDL_VIDEO_DRIVER_HAIKU
