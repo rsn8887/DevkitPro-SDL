@@ -48,7 +48,7 @@ set(SRC_DIRS
         src/thread
         src/thread/switch
         src/timer
-        src/timer/unix
+        src/timer/switch
         src/video
         src/video/yuv2rgb
         src/video/switch
