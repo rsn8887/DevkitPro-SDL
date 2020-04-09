@@ -4267,8 +4267,8 @@ AS_HELP_STRING([--enable-render-d3d], [enable the Direct3D render driver [[defau
         fi
         # Set up files for the timer library
         if test x$enable_timers = xyes; then
-            AC_DEFINE(SDL_TIMER_UNIX, 1, [ ])
-            SOURCES="$SOURCES $srcdir/src/timer/unix/*.c"
+            AC_DEFINE(SDL_TIMER_SWITCH, 1, [ ])
+            SOURCES="$SOURCES $srcdir/src/timer/switch/*.c"
             have_timers=yes
         fi
         # Set up files for the thread library

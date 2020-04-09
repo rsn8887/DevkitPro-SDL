@@ -25,8 +25,8 @@
 #include <switch.h>
 
 #include "SDL_events.h"
-#include "SDL_switchtouch.h"
 #include "../../events/SDL_touch_c.h"
+#include "../../video/SDL_sysvideo.h"
 
 #define MAX_TOUCH 16
 
@@ -61,6 +61,11 @@ SWITCH_QuitTouch(void)
 void
 SWITCH_PollTouch(void)
 {
+    SDL_Window *window = SDL_GetFocusWindow();
+    if (window == NULL) {
+        return;
+    }
+
     memcpy(&touchState_old, &touchState, sizeof(touchState));
 
     touchState.count = hidTouchCount();
@@ -75,12 +80,12 @@ SWITCH_PollTouch(void)
             hidTouchRead(&touchState.touch[i].position, i);
 
             // Send an initial touch
-            SDL_SendTouch(0, (SDL_FingerID) i, SDL_TRUE,
+            SDL_SendTouch(0, (SDL_FingerID) i, window, SDL_TRUE,
                           (float) touchState.touch[i].position.px / 1280.0f,
                           (float) touchState.touch[i].position.py / 720.0f, 1);
 
             // Always send the motion
-            SDL_SendTouchMotion(0, (SDL_FingerID) i,
+            SDL_SendTouchMotion(0, (SDL_FingerID) i, window,
                                 (float) touchState.touch[i].position.px / 1280.0f,
                                 (float) touchState.touch[i].position.py / 720.0f, 1);
         }
@@ -102,7 +107,7 @@ SWITCH_PollTouch(void)
 
             if (finger_up == 1) {
                 // Finger released from screen
-                SDL_SendTouch((SDL_TouchID) 0, (SDL_FingerID) touchState_old.touch[i].id, SDL_FALSE,
+                SDL_SendTouch((SDL_TouchID) 0, (SDL_FingerID) touchState_old.touch[i].id, window, SDL_FALSE,
                               (float) touchState_old.touch[i].position.px / 1280.0f,
                               (float) touchState_old.touch[i].position.py / 720.0f, 1);
             }

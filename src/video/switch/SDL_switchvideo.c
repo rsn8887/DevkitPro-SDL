@@ -47,8 +47,10 @@ SWITCH_Available(void)
 static void
 SWITCH_Destroy(SDL_VideoDevice *device)
 {
-    if (device) {
-        SDL_free(device->driverdata);
+    if (device != NULL) {
+        if(device->driverdata != NULL) {
+            SDL_free(device->driverdata);
+        }
         SDL_free(device);
     }
 }
@@ -110,7 +112,7 @@ SWITCH_CreateDevice(int devindex)
 
 VideoBootStrap SWITCH_bootstrap = {
         "Switch",
-        "OpenGL ES2 video driver for Nintendo Switch",
+        "SDL2 video driver for Nintendo Switch",
         SWITCH_Available,
         SWITCH_CreateDevice
 };
@@ -129,10 +131,12 @@ SWITCH_VideoInit(_THIS)
     current_mode.h = 1080;
     current_mode.refresh_rate = 60;
     current_mode.format = SDL_PIXELFORMAT_RGBA8888;
+    current_mode.driverdata = NULL;
 
     SDL_zero(display);
     display.desktop_mode = current_mode;
     display.current_mode = current_mode;
+    display.driverdata = NULL;
     SDL_AddVideoDisplay(&display);
 
     // init touch
@@ -244,8 +248,10 @@ SWITCH_DestroyWindow(_THIS, SDL_Window *window)
             if (data->egl_surface != EGL_NO_SURFACE) {
                 SDL_EGL_DestroySurface(_this, data->egl_surface);
             }
-            SDL_free(window->driverdata);
-            window->driverdata = NULL;
+            if(window->driverdata != NULL) {
+                SDL_free(window->driverdata);
+                window->driverdata = NULL;
+            }
         }
         switch_window = NULL;
     }
