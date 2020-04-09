@@ -27573,9 +27573,9 @@ $as_echo "#define SDL_JOYSTICK_SWITCH 1" >>confdefs.h
         # Set up files for the timer library
         if test x$enable_timers = xyes; then
 
-$as_echo "#define SDL_TIMER_UNIX 1" >>confdefs.h
+$as_echo "#define SDL_TIMER_SWITCH 1" >>confdefs.h
 
-            SOURCES="$SOURCES $srcdir/src/timer/unix/*.c"
+            SOURCES="$SOURCES $srcdir/src/timer/switch/*.c"
             have_timers=yes
         fi
         # Set up files for the thread library
