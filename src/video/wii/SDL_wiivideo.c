@@ -33,20 +33,21 @@
 #include <gccore.h>
 #include <ogcsys.h>
 #include <malloc.h>
-#include <ogc/texconv.h>
 #include <wiiuse/wpad.h>
 #include "SDL_wiivideo.h"
 #include "SDL_wiievents_c.h"
+#include <ogc/machine/processor.h>
 
 static const char	WIIVID_DRIVER_NAME[] = "wii";
 static lwp_t videothread = LWP_THREAD_NULL;
-static SDL_mutex *videomutex = 0;
+static SDL_mutex *videomutex = NULL;
 static SDL_cond *videocond = NULL;
+static WiiVideo *current = NULL;
+
+int vresx=0, vresy=0;
 
 /*** SDL ***/
-static SDL_Rect mode_320;
-static SDL_Rect mode_640;
-static SDL_Rect mode_848;
+static SDL_Rect mode_320, mode_640, mode_848;
 
 static SDL_Rect* modes_descending[] =
 {
@@ -59,20 +60,16 @@ static SDL_Rect* modes_descending[] =
 /*** 2D Video ***/
 #define HASPECT 			320
 #define VASPECT 			240
-#define TEXTUREMEM_SIZE 	(640*480*4)
 
-unsigned int *xfb[2] = { NULL, NULL }; // Double buffered
-int whichfb = 0; // Switch
+unsigned char *xfb = NULL;
 GXRModeObj* vmode = 0;
-u8 * screenTex = NULL; // screen capture
 static int quit_flip_thread = 0;
-static unsigned char texturemem[TEXTUREMEM_SIZE] __attribute__((aligned(32))); // GX texture
-static unsigned char textureconvert[TEXTUREMEM_SIZE] __attribute__((aligned(32))); // 565 mem
+static GXTexObj texobj_a, texobj_b;
+static GXTlutObj texpalette_a, texpalette_b;
 
 /*** GX ***/
 #define DEFAULT_FIFO_SIZE 256 * 1024
 static unsigned char gp_fifo[DEFAULT_FIFO_SIZE] __attribute__((aligned(32)));
-static GXTexObj texobj;
 
 /* New texture based scaler */
 typedef struct tagcamera
@@ -99,6 +96,12 @@ static s16 square[] ATTRIBUTE_ALIGN (32) =
 	-HASPECT, -VASPECT, 0	// 3
 };
 
+static const f32 tex_pos[] ATTRIBUTE_ALIGN(32) = {
+	0.0, 0.0,
+	1.0, 0.0,
+	1.0, 1.0,
+	0.0, 1.0,
+};
 
 static camera cam = {
 	{0.0F, 0.0F, 0.0F},
@@ -114,21 +117,19 @@ static int currentheight;
 static int currentbpp;
 
 static void
-draw_init ()
+draw_init(void *palette, void *tex)
 {
 	Mtx m, mv, view;
 
 	GX_ClearVtxDesc ();
 	GX_SetVtxDesc (GX_VA_POS, GX_INDEX8);
-	GX_SetVtxDesc (GX_VA_CLR0, GX_INDEX8);
-	GX_SetVtxDesc (GX_VA_TEX0, GX_DIRECT);
+	GX_SetVtxDesc (GX_VA_TEX0, GX_INDEX8);
 
 	GX_SetVtxAttrFmt (GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_S16, 0);
-	GX_SetVtxAttrFmt (GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
 	GX_SetVtxAttrFmt (GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
 
 	GX_SetArray (GX_VA_POS, square, 3 * sizeof (s16));
-
+	GX_SetArray (GX_VA_TEX0, (void*)tex_pos, 2 * sizeof (f32));
 	GX_SetNumTexGens (1);
 	GX_SetNumChans (0);
 
@@ -137,61 +138,66 @@ draw_init ()
 	GX_SetTevOp (GX_TEVSTAGE0, GX_REPLACE);
 	GX_SetTevOrder (GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL);
 
-	memset (&view, 0, sizeof (Mtx));
+	memset(&view, 0, sizeof (Mtx));
 	guLookAt(view, &cam.pos, &cam.up, &cam.view);
 	guMtxIdentity(m);
 	guMtxTransApply(m, m, 0, 0, -100);
 	guMtxConcat(view, m, mv);
-	GX_LoadPosMtxImm (view, GX_PNMTX0);
+	GX_LoadPosMtxImm(mv, GX_PNMTX0);
 
 	GX_InvVtxCache ();	// update vertex cache
 
-	// initialize the texture obj we are going to use
-	if (currentbpp == 8 || currentbpp == 16)
-		GX_InitTexObj (&texobj, texturemem, currentwidth, currentheight, GX_TF_RGB565, GX_CLAMP, GX_CLAMP, GX_FALSE);
-	else
-		GX_InitTexObj (&texobj, texturemem, currentwidth, currentheight, GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+	if (currentbpp == 8) {
+		GX_InitTlutObj(&texpalette_a, palette, GX_TL_IA8, 256);
+		GX_InitTlutObj(&texpalette_b, (Uint16*)palette+256, GX_TL_IA8, 256);
+		DCStoreRange(palette, sizeof(512*sizeof(Uint16)));
+		GX_LoadTlut(&texpalette_a, GX_TLUT0);
+		GX_LoadTlut(&texpalette_b, GX_TLUT1);
 
-	GX_LoadTexObj (&texobj, GX_TEXMAP0);	// load texture object so its ready to use
+		GX_InitTexObjCI(&texobj_a, tex, currentwidth, currentheight, GX_TF_CI8, GX_CLAMP, GX_CLAMP, 0, GX_TLUT0);
+		GX_InitTexObjCI(&texobj_b, tex, currentwidth, currentheight, GX_TF_CI8, GX_CLAMP, GX_CLAMP, 0, GX_TLUT1);
+		GX_LoadTexObj(&texobj_b, GX_TEXMAP1);
+
+		// Setup TEV to combine Red+Green and Blue paletted images
+		GX_SetTevColor(GX_TEVREG0, (GXColor){255, 255, 0, 0});
+		GX_SetTevSwapModeTable(GX_TEV_SWAP1, GX_CH_RED, GX_CH_ALPHA, GX_CH_BLUE, GX_CH_ALPHA);
+		GX_SetTevSwapModeTable(GX_TEV_SWAP2, GX_CH_ALPHA, GX_CH_ALPHA, GX_CH_BLUE, GX_CH_ALPHA);
+		// first stage = red and green
+		GX_SetTevSwapMode(GX_TEVSTAGE0, GX_TEV_SWAP0, GX_TEV_SWAP1);
+		GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_TEXC, GX_CC_C0, GX_CC_ZERO);
+		// second stage = add blue (and opaque alpha)
+		GX_SetTevOp(GX_TEVSTAGE1, GX_BLEND);
+		GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORD0, GX_TEXMAP1, GX_COLORNULL);
+		GX_SetTevSwapMode(GX_TEVSTAGE1, GX_TEV_SWAP0, GX_TEV_SWAP2);
+		GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_TEXC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+		GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_KONST);
+
+		GX_SetNumTevStages(2);
+	}
+	else if (currentbpp == 16)
+		GX_InitTexObj(&texobj_a, tex, currentwidth, currentheight, GX_TF_RGB565, GX_CLAMP, GX_CLAMP, GX_FALSE);
+	else
+		GX_InitTexObj(&texobj_a, tex, currentwidth, currentheight, GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+
+	GX_LoadTexObj(&texobj_a, GX_TEXMAP0);	// load texture object so its ready to use
 }
 
 static inline void
-draw_vert (u8 pos, u8 c, f32 s, f32 t)
+draw_vert (u8 index)
 {
-	GX_Position1x8 (pos);
-	GX_Color1x8 (c);
-	GX_TexCoord2f32 (s, t);
+	GX_Position1x8 (index);
+	GX_TexCoord1x8 (index);
 }
 
 static inline void
 draw_square ()
 {
-	GX_Begin (GX_QUADS, GX_VTXFMT0, 4);
-	draw_vert (0, 0, 0.0, 0.0);
-	draw_vert (1, 0, 1.0, 0.0);
-	draw_vert (2, 0, 1.0, 1.0);
-	draw_vert (3, 0, 0.0, 1.0);
-	GX_End ();
-}
-
-/****************************************************************************
- * TakeScreenshot
- *
- * Copies the current screen into a GX texture
- ***************************************************************************/
-
-static void TakeScreenshot()
-{
-	int texSize = vmode->fbWidth * vmode->efbHeight * 4;
-
-	if(screenTex) free(screenTex);
-	screenTex = (u8 *)memalign(32, texSize);
-	if(screenTex == NULL) return;
-	GX_SetTexCopySrc(0, 0, vmode->fbWidth, vmode->efbHeight);
-	GX_SetTexCopyDst(vmode->fbWidth, vmode->efbHeight, GX_TF_RGBA8, GX_FALSE);
-	GX_CopyTex(screenTex, GX_FALSE);
-	GX_PixModeSync();
-	DCFlushRange(screenTex, texSize);
+	GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
+	draw_vert(0);
+	draw_vert(1);
+	draw_vert(2);
+	draw_vert(3);
+	GX_End();
 }
 
 static void * flip_thread (void *arg)
@@ -231,36 +237,67 @@ SetupGX()
 	Mtx44 p;
 	int df = 1; // deflicker on/off
 
+	GX_SetCurrentGXThread();
 	GX_SetViewport (0, 0, vmode->fbWidth, vmode->efbHeight, 0, 1);
 	GX_SetDispCopyYScale ((f32) vmode->xfbHeight / (f32) vmode->efbHeight);
 	GX_SetScissor (0, 0, vmode->fbWidth, vmode->efbHeight);
 
-	GX_SetDispCopySrc (0, 0, vmode->fbWidth, vmode->efbHeight);
-	GX_SetDispCopyDst (vmode->fbWidth, vmode->xfbHeight);
+	GX_SetDispCopySrc(0, 0, vmode->fbWidth, vmode->efbHeight);
+	GX_SetDispCopyDst(vmode->fbWidth, vmode->xfbHeight);
 	GX_SetCopyFilter (vmode->aa, vmode->sample_pattern, (df == 1) ? GX_TRUE : GX_FALSE, vmode->vfilter);
 
 	GX_SetFieldMode (vmode->field_rendering, ((vmode->viHeight == 2 * vmode->xfbHeight) ? GX_ENABLE : GX_DISABLE));
 	GX_SetPixelFmt (GX_PF_RGB8_Z24, GX_ZC_LINEAR);
 	GX_SetDispCopyGamma (GX_GM_1_0);
 	GX_SetCullMode (GX_CULL_NONE);
-	GX_SetBlendMode(GX_BM_BLEND,GX_BL_DSTALPHA,GX_BL_INVSRCALPHA,GX_LO_CLEAR);
+	GX_SetBlendMode(GX_BM_NONE,GX_BL_DSTALPHA,GX_BL_INVSRCALPHA,GX_LO_CLEAR);
 
-	GX_SetZMode (GX_TRUE, GX_LEQUAL, GX_TRUE);
+	GX_SetZMode (GX_FALSE, GX_LEQUAL, GX_TRUE);
 	GX_SetColorUpdate (GX_TRUE);
-	GX_SetNumChans(1);
+	GX_SetAlphaUpdate(GX_FALSE);
 
-	guOrtho(p, 480/2, -(480/2), -(640/2), 640/2, 100, 1000); // matrix, t, b, l, r, n, f
+	guOrtho(p, VASPECT, -VASPECT, -HASPECT, HASPECT, 100, 1000); // matrix, t, b, l, r, n, f
 	GX_LoadProjectionMtx (p, GX_ORTHOGRAPHIC);
+	GX_Flush();
 }
 
 static void
-StartVideoThread()
+StartVideoThread(void *args)
 {
 	if(videothread == LWP_THREAD_NULL)
 	{
 		quit_flip_thread = 0;
-		LWP_CreateThread (&videothread, flip_thread, NULL, NULL, 0, 68);
+		LWP_CreateThread(&videothread, flip_thread, args, NULL, 0, 68);
 	}
+}
+
+void WII_VideoStart(WiiVideo *private)
+{
+	if (private==NULL) {
+		if (current==NULL)
+			return;
+		private = current;
+	}
+
+	SetupGX();
+	draw_init(private->palette, private->texturemem);
+	StartVideoThread(&private->texturemem);
+	WPAD_SetVRes(WPAD_CHAN_0, vresx+vresx/4, vresy+vresy/4);
+	current = private;
+}
+
+void WII_VideoStop()
+{
+	if(videothread == LWP_THREAD_NULL)
+		return;
+
+	SDL_LockMutex(videomutex);
+	quit_flip_thread = 1;
+	SDL_CondSignal(videocond);
+	SDL_UnlockMutex(videomutex);
+
+	LWP_JoinThread(videothread, NULL);
+	videothread = LWP_THREAD_NULL;
 }
 
 static int WII_VideoInit(_THIS, SDL_PixelFormat *vformat)
@@ -278,12 +315,13 @@ static int WII_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	vformat->BytesPerPixel	= 2;
 
 	this->hidden->buffer = NULL;
+	this->hidden->texturemem = NULL;
 	this->hidden->width = 0;
 	this->hidden->height = 0;
 	this->hidden->pitch = 0;
 
 	/* We're done! */
-	return(0);
+	return 0;
 }
 
 static SDL_Rect **WII_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
@@ -327,19 +365,33 @@ static SDL_Surface *WII_SetVideoMode(_THIS, SDL_Surface *current,
 
 	bytes_per_pixel = bpp / 8;
 
-	// Free any existing buffer.
-	if (this->hidden->buffer)
-	{
-		free(this->hidden->buffer);
-		this->hidden->buffer = NULL;
-	}
+	WII_VideoStop();
+
+	free(this->hidden->buffer);
+	free(this->hidden->texturemem);
 
 	// Allocate the new buffer.
 	this->hidden->buffer = memalign(32, width * height * bytes_per_pixel);
 	if (!this->hidden->buffer )
 	{
+		this->hidden->texturemem = NULL;
 		SDL_SetError("Couldn't allocate buffer for requested mode");
 		return(NULL);
+	}
+
+	// Allocate texture memory
+	if (bytes_per_pixel > 2)
+		this->hidden->texturemem_size = width * height * 4;
+	else
+		this->hidden->texturemem_size = width * height * bytes_per_pixel;
+
+	this->hidden->texturemem = memalign(32, this->hidden->texturemem_size);
+	if (this->hidden->texturemem == NULL)
+	{
+		free(this->hidden->buffer);
+		this->hidden->buffer = NULL;
+		SDL_SetError("Couldn't allocate memory for texture");
+		return NULL;
 	}
 
 	// Allocate the new pixel format for the screen
@@ -347,13 +399,17 @@ static SDL_Surface *WII_SetVideoMode(_THIS, SDL_Surface *current,
 	{
 		free(this->hidden->buffer);
 		this->hidden->buffer = NULL;
+		free(this->hidden->texturemem);
+		this->hidden->texturemem = NULL;
 
+		SDL_UnlockMutex(videomutex);
 		SDL_SetError("Couldn't allocate new pixel format for requested mode");
-		return(NULL);
+		return NULL;
 	}
 
 	// Clear the buffer
 	SDL_memset(this->hidden->buffer, 0, width * height * bytes_per_pixel);
+	SDL_memset(this->hidden->texturemem, 0, this->hidden->texturemem_size);
 
 	// Set up the new mode framebuffer
 	current->flags = flags & (SDL_FULLSCREEN | SDL_HWPALETTE | SDL_NOFRAME);
@@ -367,16 +423,17 @@ static SDL_Surface *WII_SetVideoMode(_THIS, SDL_Surface *current,
 	/* Set the hidden data */
 	this->hidden->width = current->w;
 	this->hidden->height = current->h;
-	this->hidden->pitch = current->pitch;
+	this->hidden->pitch = current->w * (bytes_per_pixel > 2 ? 4 : bytes_per_pixel);
 
 	currentwidth = current->w;
 	currentheight = current->h;
 	currentbpp = bpp;
-	WPAD_SetVRes(WPAD_CHAN_ALL, currentwidth*1.5, currentheight*1.5);
-	draw_init();
-	StartVideoThread();
-	/* We're done */
-	return(current);
+	vresx = currentwidth;
+	vresy = currentheight;
+
+	WII_VideoStart(this->hidden);
+
+	return current;
 }
 
 /* We don't actually allow hardware surfaces other than the main one */
@@ -402,45 +459,54 @@ static void WII_UnlockHWSurface(_THIS, SDL_Surface *surface)
 
 static inline void Set_RGBAPixel(_THIS, int x, int y, u32 color)
 {
-	u8 *truc = (u8*) texturemem;
+	u8 *truc = this->hidden->texturemem;
 	int width = this->hidden->width;
 	u32 offset;
 
-	offset = (((y >> 2) << 4) * width) + ((x >> 2) << 6) + (((y % 4 << 2) + x % 4) << 1);
+	offset = (((y >> 2) << 4) * width) + ((x >> 2) << 6) + ((((y & 3) << 2) + (x & 3)) << 1);
 
-	*(truc + offset) = color & 0xFF;
-	*(truc + offset + 1) = (color >> 24) & 0xFF;
-	*(truc + offset + 32) = (color >> 16) & 0xFF;
-	*(truc + offset + 33) = (color >> 8) & 0xFF;
+	*(truc + offset) = color;
+	*(truc + offset + 1) = color >> 24;
+	*(truc + offset + 32) = color >> 16;
+	*(truc + offset + 33) = color >> 8;
 }
 
 static inline void Set_RGB565Pixel(_THIS, int x, int y, u16 color)
 {
-	u8 *truc = (u8*) texturemem;
+	u8 *truc = this->hidden->texturemem;
 	int width = this->hidden->width;
 	u32 offset;
 
-	offset = (((y >> 2) << 3) * width) + ((x >> 2) << 5) + (((y % 4 << 2) + x % 4) << 1);
+	offset = (((y >> 2) << 3) * width) + ((x >> 2) << 5) + ((((y & 3) << 2) + (x & 3)) << 1);
 
-	*(truc + offset) = (color >> 8) & 0xFF;
-	*(truc + offset + 1) = color & 0xFF;
+	*(truc + offset) = color >> 8;
+	*(truc + offset + 1) = color;
+}
+
+static inline void Set_PalPixel(_THIS, int x, int y, u8 color)
+{
+	u8 *truc = this->hidden->texturemem;
+	int width = this->hidden->pitch;
+	u32 offset;
+
+	offset = ((y & ~3) * width) + ((x & ~7) << 2) + ((y & 3) << 3) + (x & 7);
+
+	truc[offset] = color;
 }
 
 static void UpdateRect_8(_THIS, SDL_Rect *rect)
 {
 	u8 *src;
-	u8 *ptr;
-	u16 color;
+	u8 color;
 	int i, j;
-	Uint16 *palette = this->hidden->palette;
+
 	for (i = 0; i < rect->h; i++)
 	{
-		src = (this->hidden->buffer + (this->hidden->width * (i + rect->y)) + (rect->x));
+		src = (this->hidden->buffer + (this->hidden->width * (i + rect->y)) + rect->x);
 		for (j = 0; j < rect->w; j++)
 		{
-			ptr = src + j;
-			color = palette[*ptr];
-			Set_RGB565Pixel(this, rect->x + j, rect->y + i, color);
+			color = src[j];
+			Set_PalPixel(this, rect->x + j, rect->y + i, color);
 		}
 	}
 }
@@ -499,10 +565,40 @@ static void UpdateRect_32(_THIS, SDL_Rect *rect)
 	}
 }
 
+static void flipHWSurface_16_16(_THIS, const SDL_Surface* const surface)
+{
+	int h, w;
+	long long int *dst = (long long int *) this->hidden->texturemem;
+	long long int *src1 = (long long int *) this->hidden->buffer;
+	long long int *src2 = (long long int *) (this->hidden->buffer + (this->hidden->pitch * 1));
+	long long int *src3 = (long long int *) (this->hidden->buffer + (this->hidden->pitch * 2));
+	long long int *src4 = (long long int *) (this->hidden->buffer + (this->hidden->pitch * 3));
+	int rowpitch = (this->hidden->pitch >> 3) * 3;
+
+	SDL_mutexP(videomutex);
+	for (h = 0; h < this->hidden->height; h += 4)
+	{
+		for (w = 0; w < this->hidden->pitch; w += 8)
+		{
+			*dst++ = *src1++;
+			*dst++ = *src2++;
+			*dst++ = *src3++;
+			*dst++ = *src4++;
+		}
+
+		src1 = src4;
+		src2 += rowpitch;
+		src3 += rowpitch;
+		src4 += rowpitch;
+	}
+	SDL_CondSignal(videocond);
+	SDL_mutexV(videomutex);
+}
+
 static void WII_UpdateRect(_THIS, SDL_Rect *rect)
 {
 	const SDL_Surface* const screen = this->screen;
-	SDL_mutexP(videomutex);
+
 	switch(screen->format->BytesPerPixel) {
 	case 1:
 		UpdateRect_8(this, rect);
@@ -520,7 +616,6 @@ static void WII_UpdateRect(_THIS, SDL_Rect *rect)
 		fprintf(stderr, "Invalid BPP %d\n", screen->format->BytesPerPixel);
 		break;
 	}
-	SDL_mutexV(videomutex);
 }
 
 static void WII_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
@@ -532,127 +627,22 @@ static void WII_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 
 	for (i = 0; i < numrects; i++)
 	{
-		WII_UpdateRect(this, &rects[i]);
+		WII_UpdateRect(this, rects+i);
 	}
 
 	SDL_CondSignal(videocond);
-}
-
-static void flipHWSurface_8_16(_THIS, SDL_Surface *surface)
-{
-	int new_pitch = this->hidden->width * 2;
-	long long int *dst = (long long int *) texturemem;
-	long long int *src1 = (long long int *) textureconvert;
-	long long int *src2 = (long long int *) (textureconvert + new_pitch);
-	long long int *src3 = (long long int *) (textureconvert + (new_pitch * 2));
-	long long int *src4 = (long long int *) (textureconvert + (new_pitch * 3));
-	int rowpitch = (new_pitch >> 3) * 3;
-	int rowadjust = (new_pitch % 8) * 4;
-	Uint16 *palette = this->hidden->palette;
-	char *ra = NULL;
-	int h, w;
-
-	// crude convert
-	Uint16 * ptr_cv = (Uint16 *) textureconvert;
-	Uint8 *ptr = (Uint8 *)this->hidden->buffer;
-
-	for (h = 0; h < this->hidden->height; h++)
-	{
-		for (w = 0; w < this->hidden->width; w++)
-		{
-			Uint16 v = palette[*ptr];
-
-			*ptr_cv++ = v;
-			ptr++;
-		}
-	}
-
-	// same as 16bit
-	for (h = 0; h < this->hidden->height; h += 4)
-	{
-		for (w = 0; w < (this->hidden->width >> 2); w++)
-		{
-			*dst++ = *src1++;
-			*dst++ = *src2++;
-			*dst++ = *src3++;
-			*dst++ = *src4++;
-		}
-
-		src1 += rowpitch;
-		src2 += rowpitch;
-		src3 += rowpitch;
-		src4 += rowpitch;
-
-		if ( rowadjust )
-		{
-			ra = (char *)src1;
-			src1 = (long long int *)(ra + rowadjust);
-			ra = (char *)src2;
-			src2 = (long long int *)(ra + rowadjust);
-			ra = (char *)src3;
-			src3 = (long long int *)(ra + rowadjust);
-			ra = (char *)src4;
-			src4 = (long long int *)(ra + rowadjust);
-		}
-	}
-}
-
-static void flipHWSurface_16_16(_THIS, SDL_Surface *surface)
-{
-	int h, w;
-	long long int *dst = (long long int *) texturemem;
-	long long int *src1 = (long long int *) this->hidden->buffer;
-	long long int *src2 = (long long int *) (this->hidden->buffer + this->hidden->pitch);
-	long long int *src3 = (long long int *) (this->hidden->buffer + (this->hidden->pitch * 2));
-	long long int *src4 = (long long int *) (this->hidden->buffer + (this->hidden->pitch * 3));
-	int rowpitch = (this->hidden->pitch >> 3) * 3;
-	int rowadjust = (this->hidden->pitch % 8) * 4;
-	char *ra = NULL;
-
-	SDL_mutexP(videomutex);
-
-	for (h = 0; h < this->hidden->height; h += 4)
-	{
-		for (w = 0; w < this->hidden->width; w += 4)
-		{
-			*dst++ = *src1++;
-			*dst++ = *src2++;
-			*dst++ = *src3++;
-			*dst++ = *src4++;
-		}
-
-		src1 += rowpitch;
-		src2 += rowpitch;
-		src3 += rowpitch;
-		src4 += rowpitch;
-
-		if ( rowadjust )
-		{
-			ra = (char *)src1;
-			src1 = (long long int *)(ra + rowadjust);
-			ra = (char *)src2;
-			src2 = (long long int *)(ra + rowadjust);
-			ra = (char *)src3;
-			src3 = (long long int *)(ra + rowadjust);
-			ra = (char *)src4;
-			src4 = (long long int *)(ra + rowadjust);
-		}
-	}
-
-	SDL_CondSignal(videocond);
-	SDL_mutexV(videomutex);
 }
 
 static void flipHWSurface_24_16(_THIS, SDL_Surface *surface)
 {
 	SDL_Rect screen_rect = {0, 0, this->hidden->width, this->hidden->height};
-	WII_UpdateRect(this, &screen_rect);
+	WII_UpdateRects(this, 1, &screen_rect);
 }
 
 static void flipHWSurface_32_16(_THIS, SDL_Surface *surface)
 {
 	SDL_Rect screen_rect = {0, 0, this->hidden->width, this->hidden->height};
-	WII_UpdateRect(this, &screen_rect);
+	WII_UpdateRects(this, 1, &screen_rect);
 }
 
 static int WII_FlipHWSurface(_THIS, SDL_Surface *surface)
@@ -660,9 +650,8 @@ static int WII_FlipHWSurface(_THIS, SDL_Surface *surface)
 	switch(surface->format->BytesPerPixel)
 	{
 		case 1:
-			flipHWSurface_8_16(this, surface);
-			break;
 		case 2:
+			// 8 and 16 bit use the same tile format
 			flipHWSurface_16_16(this, surface);
 			break;
 		case 3:
@@ -674,7 +663,7 @@ static int WII_FlipHWSurface(_THIS, SDL_Surface *surface)
 		default:
 			return -1;
 	}
-	return 1;
+	return 0;
 }
 
 static int WII_SetColors(_THIS, int first_color, int color_count, SDL_Color *colors)
@@ -683,16 +672,23 @@ static int WII_SetColors(_THIS, int first_color, int color_count, SDL_Color *col
 	Uint16* const palette = this->hidden->palette;
 	int     component;
 
-	/* Build the RGB565 palette. */
-	for (component = first_color; component != last_color; ++component)
-	{
-		const SDL_Color* const in = &colors[component - first_color];
-		const unsigned int r    = (in->r >> 3) & 0x1f;
-		const unsigned int g    = (in->g >> 2) & 0x3f;
-		const unsigned int b    = (in->b >> 3) & 0x1f;
+	SDL_LockMutex(videomutex);
 
-		palette[component] = (r << 11) | (g << 5) | b;
+	/* Build the RGB24 palette. */
+	for (component = first_color; component != last_color; ++component, ++colors)
+	{
+		palette[component] = (colors->g << 8) | colors->r;
+		palette[component+256] = colors->b;
 	}
+
+	DCStoreRangeNoSync(palette+first_color, color_count*sizeof(Uint16));
+	DCStoreRange(palette+first_color+256, color_count*sizeof(Uint16));
+	GX_LoadTlut(&texpalette_a, GX_TLUT0);
+	GX_LoadTlut(&texpalette_b, GX_TLUT1);
+	GX_LoadTexObj(&texobj_a, GX_TEXMAP0);
+	GX_LoadTexObj(&texobj_b, GX_TEXMAP1);
+
+	SDL_UnlockMutex(videomutex);
 
 	return(1);
 }
@@ -703,13 +699,20 @@ static void WII_VideoQuit(_THIS)
 	GX_AbortFrame();
 	GX_Flush();
 
+	current = NULL;
+
 	VIDEO_SetBlack(TRUE);
 	VIDEO_Flush();
+
+	free(this->hidden->buffer);
+	this->hidden->buffer = NULL;
+	free(this->hidden->texturemem);
+	this->hidden->texturemem = NULL;
 }
 
 static void WII_DeleteDevice(SDL_VideoDevice *device)
 {
-	SDL_free(device->hidden);
+	free(device->hidden);
 	SDL_free(device);
 
 	SDL_DestroyCond(videocond);
@@ -727,7 +730,7 @@ static SDL_VideoDevice *WII_CreateDevice(int devindex)
 	if ( device ) {
 		SDL_memset(device, 0, (sizeof *device));
 		device->hidden = (struct SDL_PrivateVideoData *)
-			SDL_malloc((sizeof *device->hidden));
+			memalign(32, sizeof(struct SDL_PrivateVideoData));
 	}
 	if ( (device == NULL) || (device->hidden == NULL) ) {
 		SDL_OutOfMemory();
@@ -745,29 +748,21 @@ static SDL_VideoDevice *WII_CreateDevice(int devindex)
 	device->VideoInit = WII_VideoInit;
 	device->ListModes = WII_ListModes;
 	device->SetVideoMode = WII_SetVideoMode;
-	device->CreateYUVOverlay = NULL;
 	device->SetColors = WII_SetColors;
 	device->UpdateRects = WII_UpdateRects;
 	device->VideoQuit = WII_VideoQuit;
 	device->AllocHWSurface = WII_AllocHWSurface;
-	device->CheckHWBlit = NULL;
-	device->FillHWRect = NULL;
-	device->SetHWColorKey = NULL;
-	device->SetHWAlpha = NULL;
 	device->LockHWSurface = WII_LockHWSurface;
 	device->UnlockHWSurface = WII_UnlockHWSurface;
 	device->FlipHWSurface = WII_FlipHWSurface;
 	device->FreeHWSurface = WII_FreeHWSurface;
-	device->SetCaption = NULL;
-	device->SetIcon = NULL;
-	device->IconifyWindow = NULL;
-	device->GrabInput = NULL;
-	device->GetWMInfo = NULL;
 	device->InitOSKeymap = WII_InitOSKeymap;
 	device->PumpEvents = WII_PumpEvents;
+	device->input_grab = SDL_GRAB_ON;
 
 	device->free = WII_DeleteDevice;
 
+	WII_InitVideoSystem();
 	return device;
 }
 
@@ -789,88 +784,57 @@ WII_InitVideoSystem()
 	vmode = VIDEO_GetPreferredMode(NULL);
 
 	/* Set up the video system with the chosen mode */
+	if (vmode == &TVPal528IntDf)
+		vmode = &TVPal576IntDfScale;
+
 	VIDEO_Configure(vmode);
 
-	// Allocate the video buffers
-	xfb[0] = (u32 *) SYS_AllocateFramebuffer (vmode);
-	xfb[1] = (u32 *) SYS_AllocateFramebuffer (vmode);
-	DCInvalidateRange(xfb[0], VIDEO_GetFrameBufferSize(vmode));
-	DCInvalidateRange(xfb[1], VIDEO_GetFrameBufferSize(vmode));
-	xfb[0] = (u32 *) MEM_K0_TO_K1 (xfb[0]);
-	xfb[1] = (u32 *) MEM_K0_TO_K1 (xfb[1]);
+	// Allocate the video buffer
+	if (xfb) free(MEM_K1_TO_K0(xfb));
+	xfb = (unsigned char*) MEM_K0_TO_K1(SYS_AllocateFramebuffer(vmode));
 
-	VIDEO_ClearFrameBuffer(vmode, xfb[0], COLOR_BLACK);
-	VIDEO_ClearFrameBuffer(vmode, xfb[1], COLOR_BLACK);
-	VIDEO_SetNextFramebuffer (xfb[0]);
+	VIDEO_ClearFrameBuffer(vmode, xfb, COLOR_BLACK);
+	VIDEO_SetNextFramebuffer(xfb);
 
 	// Show the screen.
 	VIDEO_SetBlack(FALSE);
 	VIDEO_Flush();
-	VIDEO_WaitVSync();
-	if (vmode->viTVMode & VI_NON_INTERLACE)
-			VIDEO_WaitVSync();
-		else
-			while (VIDEO_GetNextField())
-				VIDEO_WaitVSync();
+	VIDEO_WaitVSync(); VIDEO_WaitVSync();
 
-	CON_Init(xfb[0],20,20,vmode->fbWidth,vmode->xfbHeight,vmode->fbWidth*VI_DISPLAY_PIX_SZ);
+	//CON_Init(xfb,20,20,vmode->fbWidth,vmode->xfbHeight,vmode->fbWidth*VI_DISPLAY_PIX_SZ);
 
 	/*** Clear out FIFO area ***/
-	memset (&gp_fifo, 0, DEFAULT_FIFO_SIZE);
+	memset(&gp_fifo, 0, DEFAULT_FIFO_SIZE);
 
 	/*** Initialise GX ***/
-	GX_Init (&gp_fifo, DEFAULT_FIFO_SIZE);
+	GX_Init(&gp_fifo, DEFAULT_FIFO_SIZE);
 
 	GXColor background = { 0, 0, 0, 0xff };
-	GX_SetCopyClear (background, 0x00ffffff);
+	GX_SetCopyClear (background, GX_MAX_Z24);
 
 	SetupGX();
 }
 
 void WII_SetWidescreen(int wide)
 {
-	if(wide)
-	{
-		vmode->viWidth = 678;
-		vmode->viXOrigin = (VI_MAX_WIDTH_NTSC - 678) / 2;
+	int width;
+	if(wide) {
+		width = 678;
 	}
 	else
-	{
-		vmode->viWidth = 640;
-		vmode->viXOrigin = (VI_MAX_WIDTH_NTSC - 640) / 2;
-	}
+		width = 640;
+
+	vmode->viWidth = width;
+	vmode->viXOrigin = (VI_MAX_WIDTH_NTSC - width) / 2;
+
 	VIDEO_Configure (vmode);
+
+	if (xfb)
+		VIDEO_ClearFrameBuffer(vmode, xfb, COLOR_BLACK);
+
 	VIDEO_Flush();
-	
-	VIDEO_WaitVSync ();
-		
-	if (vmode->viTVMode & VI_NON_INTERLACE)
-		VIDEO_WaitVSync();
-	else
-		while (VIDEO_GetNextField())
-			VIDEO_WaitVSync();
-}
 
-void WII_VideoStart()
-{
-	SetupGX();
-	draw_init();
-	StartVideoThread();
-	WPAD_SetVRes(WPAD_CHAN_ALL, currentwidth*2, currentheight*2);
-}
-
-void WII_VideoStop()
-{
-	if(videothread == LWP_THREAD_NULL)
-		return;
-
-	SDL_LockMutex(videomutex);
-	quit_flip_thread = 1;
-	SDL_CondSignal(videocond);
-	SDL_UnlockMutex(videomutex);
-
-	LWP_JoinThread(videothread, NULL);
-	videothread = LWP_THREAD_NULL;
+	VIDEO_WaitVSync(); VIDEO_WaitVSync();
 }
 
 void WII_ChangeSquare(int xscale, int yscale, int xshift, int yshift)
@@ -880,4 +844,5 @@ void WII_ChangeSquare(int xscale, int yscale, int xshift, int yshift)
 	square[4] = square[1]  =  yscale - yshift;
 	square[7] = square[10] = -yscale - yshift;
 	DCFlushRange (square, 32); // update memory BEFORE the GPU accesses it!
+	GX_InvVtxCache();
 }

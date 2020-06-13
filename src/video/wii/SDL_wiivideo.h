@@ -30,22 +30,28 @@
 #include <ogc/gx_struct.h>
 
 /* Hidden "this" pointer for the video functions */
-#define _THIS	SDL_VideoDevice *this
+#define _THIS   SDL_VideoDevice *this
 
 /* Private display data */
-struct SDL_PrivateVideoData
+typedef struct SDL_PrivateVideoData
 {
-	Uint8*					buffer;
-	int						width;
-	int						height;
-	int						pitch;
+    // 2x256x16bit palettes = 1x256x24(32)bit palette
+    // first 256 entries are for Red/Green
+    // last 256 entries are for Green
+    Uint16 palette[2*256];
 
-	Uint16             palette[256];
-};
+    Uint8* buffer;
+
+    // these two fields MUST be in this order
+    Uint8* texturemem;
+    size_t texturemem_size;
+
+    int    width;
+    int    height;
+    int    pitch;
+} WiiVideo;
 
 void WII_InitVideoSystem();
-void WII_VideoStart();
-void WII_VideoStop();
 void WII_ChangeSquare(int xscale, int yscale, int xshift, int yshift);
 
 #endif /* _SDL_wiivideo_h */

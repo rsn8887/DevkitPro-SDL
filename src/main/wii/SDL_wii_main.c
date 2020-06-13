@@ -9,6 +9,7 @@
 #include "../../video/wii/SDL_wiivideo.h"
 
 /* OGC includes */
+#include <fat.h>
 #include <ogcsys.h>
 #include <wiiuse/wpad.h>
 #include <ogc/usbmouse.h>
@@ -74,6 +75,7 @@ int main(int argc, char *argv[])
 	MOUSE_Init();
 	KEYBOARD_Init(NULL);
 #endif
+    fatInitDefault();
 	/* Call the user's main function */
 	return(SDL_main(argc, argv));
 }

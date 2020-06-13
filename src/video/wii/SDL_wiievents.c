@@ -29,116 +29,98 @@
 #include <unistd.h>
 #include <ogc/usbmouse.h>
 #include <wiikeyboard/keyboard.h>
+#include <ogc/pad.h>
 
 #include "SDL_wiivideo.h"
 #include "SDL_wiievents_c.h"
 
-static Uint8 lastButtonStateA = SDL_RELEASED;
-static Uint8 lastButtonStateB = SDL_RELEASED;
-
 static SDLKey keymap[232];
-
-static s32 stat;
-static s32 mstat;
-static WPADData *wd;
-static int lastx = 0, lasty = 0;
-
-static keyboard_event ke;
-static mouse_event me;
 
 static int posted;
 
 extern bool TerminateRequested;
 extern void Terminate();
+extern int vresx, vresy;
 
 void PumpEvents()
 {
+	s32 stat;
 #ifdef HW_RVL
+	keyboard_event ke;
+	mouse_event me;
+
 	if (TerminateRequested) Terminate();
 #endif
-	wd = WPAD_Data(0);
-	stat = KEYBOARD_GetEvent(&ke);
-	mstat = MOUSE_GetEvent(&me);
 
-	if (wd->ir.valid)
-	{
-		int newx = wd->ir.x;
-		int newy = wd->ir.y;
-		int diffx = newx - lastx;
-		int diffy = newy - lasty;
-		lastx = newx;
-		lasty = newy;
-
-		posted += SDL_PrivateMouseMotion(0, 1, diffx, diffy);
-
-		Uint8 stateA = SDL_RELEASED;
-		Uint8 stateB = SDL_RELEASED;
-
-		if (wd->btns_h & WPAD_BUTTON_A)
-		{
-			stateA = SDL_PRESSED;
-		}
-		if (wd->btns_h & WPAD_BUTTON_B)
-		{
-			stateB = SDL_PRESSED;
-		}
-		if (stateA != lastButtonStateA)
-		{
-			lastButtonStateA = stateA;
-			posted += SDL_PrivateMouseButton(stateA, SDL_BUTTON_LEFT, 0, 0);
-		}
-		if (stateB != lastButtonStateB)
-		{
-			lastButtonStateB = stateB;
-			posted += SDL_PrivateMouseButton(stateB, SDL_BUTTON_RIGHT, 0, 0);
-		}
+	// this will only work if Joystick 0 has been opened and has been polled
+	WPADData *wd = WPAD_Data(WPAD_CHAN_0);
+	if (wd && wd->exp.type != WPAD_EXP_CLASSIC && wd->ir.valid) {
+		// use SDL_BUTTON_X2 to signal that this is the wiimote acting as a mouse
+		Uint8 Buttons = SDL_GetMouseState(NULL, NULL)|SDL_BUTTON_X2MASK;
+		if (wd->ir.x < vresx/8)
+			wd->ir.x = vresx/8;
+		else if (wd->ir.x > (vresx + vresx/8))
+			wd->ir.x = vresx + vresx/8;
+		if (wd->ir.y < vresy/8)
+			wd->ir.y = vresy/8;
+		else if (wd->ir.y > (vresy + vresy/8))
+			wd->ir.y = vresy + vresy/8;
+		posted += SDL_PrivateMouseMotion(Buttons, 0, wd->ir.x - vresx/8, wd->ir.y - vresy/8);
+		// most apps will ignore this (hopefully)
+		posted += SDL_PrivateMouseButton(SDL_RELEASED, SDL_BUTTON_X2, 0, 0);
+		wd->ir.valid = 0;
 	}
 
+	stat = KEYBOARD_GetEvent(&ke);
 	if (stat && (ke.type == KEYBOARD_RELEASED || ke.type == KEYBOARD_PRESSED))
 	{
 		SDL_keysym keysym;
 		memset(&keysym, 0, sizeof(keysym));
-		Uint8 keystate = (ke.type == KEYBOARD_PRESSED) ? SDL_PRESSED
-				: SDL_RELEASED;
+		Uint8 keystate = (ke.type == KEYBOARD_PRESSED) ? SDL_PRESSED : SDL_RELEASED;
 		keysym.sym = keymap[ke.keycode];
+		keysym.unicode = ke.symbol;
 		keysym.mod = 0;
 		posted += SDL_PrivateKeyboard(keystate, &keysym);
 	}
 
-	if (mstat)
+	stat = MOUSE_GetEvent(&me);
+	if (stat)
 	{
-		posted += SDL_PrivateMouseMotion(0, 1, me.rx, me.ry);
-
 		u8 button = me.button;
+		Uint8 mouse_state = SDL_GetMouseState(NULL, NULL);
 
-		if (button & 0x1)
-		{
-			if (!(SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(1)))
-			{
-				posted += SDL_PrivateMouseButton(SDL_PRESSED, 1, 0, 0);
-			}
-		}
-		else
-		{
-			if ((SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(1)))
-			{
-				posted += SDL_PrivateMouseButton(SDL_RELEASED, 1, 0, 0);
-			}
-		}
+		posted += SDL_PrivateMouseMotion(0, 1, me.rx*2, me.ry*2);
 
-		if (button & 0x2)
-		{
-			if (!(SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(3)))
-			{
-				posted += SDL_PrivateMouseButton(SDL_PRESSED, 3, 0, 0);
-			}
+		if (button & 0x1) {
+			if (!(mouse_state & SDL_BUTTON_LMASK))
+				posted += SDL_PrivateMouseButton(SDL_PRESSED, SDL_BUTTON_LEFT, 0, 0);
 		}
-		else
-		{
-			if ((SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(3)))
-			{
-				posted += SDL_PrivateMouseButton(SDL_RELEASED, 3, 0, 0);
-			}
+		else if (mouse_state & SDL_BUTTON_LMASK)
+			posted += SDL_PrivateMouseButton(SDL_RELEASED, SDL_BUTTON_LEFT, 0, 0);
+
+		if (button & 0x2) {
+			if (!(mouse_state & SDL_BUTTON_RMASK))
+				posted += SDL_PrivateMouseButton(SDL_PRESSED, SDL_BUTTON_RIGHT, 0, 0);
+		}
+		else if (mouse_state & SDL_BUTTON_RMASK)
+			posted += SDL_PrivateMouseButton(SDL_RELEASED, SDL_BUTTON_RIGHT, 0, 0);
+
+		if (button & 0x4) {
+			if (!(mouse_state & SDL_BUTTON_MMASK))
+				posted += SDL_PrivateMouseButton(SDL_PRESSED, SDL_BUTTON_MIDDLE, 0, 0);
+		}
+		else if (mouse_state & SDL_BUTTON_MMASK)
+			posted += SDL_PrivateMouseButton(SDL_RELEASED, SDL_BUTTON_MIDDLE, 0, 0);
+
+		// mouse wheel actions are single events (rz==1(up) or rz==-1(down))
+		// send SDL_PRESSED immediately followed by SDL_RELEASED
+		if (me.rz > 0) {
+			posted += SDL_PrivateMouseButton(SDL_PRESSED, SDL_BUTTON_WHEELUP, 0, 0);
+			posted += SDL_PrivateMouseButton(SDL_RELEASED, SDL_BUTTON_WHEELUP, 0, 0);
+		}
+		else if (me.rz < 0) {
+			posted += SDL_PrivateMouseButton(SDL_PRESSED, SDL_BUTTON_WHEELDOWN, 0, 0);
+			posted += SDL_PrivateMouseButton(SDL_RELEASED, SDL_BUTTON_WHEELDOWN, 0, 0);
 		}
 	}
 }
