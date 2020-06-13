@@ -40,14 +40,17 @@
 
 static const char	WIIVID_DRIVER_NAME[] = "wii";
 static lwp_t videothread = LWP_THREAD_NULL;
-static SDL_mutex * videomutex = 0;
+static SDL_mutex *videomutex = 0;
+static SDL_cond *videocond = NULL;
 
 /*** SDL ***/
 static SDL_Rect mode_320;
 static SDL_Rect mode_640;
+static SDL_Rect mode_848;
 
 static SDL_Rect* modes_descending[] =
 {
+	&mode_848,
 	&mode_640,
 	&mode_320,
 	NULL
@@ -70,7 +73,6 @@ static unsigned char textureconvert[TEXTUREMEM_SIZE] __attribute__((aligned(32))
 #define DEFAULT_FIFO_SIZE 256 * 1024
 static unsigned char gp_fifo[DEFAULT_FIFO_SIZE] __attribute__((aligned(32)));
 static GXTexObj texobj;
-static Mtx view;
 
 /* New texture based scaler */
 typedef struct tagcamera
@@ -114,6 +116,8 @@ static int currentbpp;
 static void
 draw_init ()
 {
+	Mtx m, mv, view;
+
 	GX_ClearVtxDesc ();
 	GX_SetVtxDesc (GX_VA_POS, GX_INDEX8);
 	GX_SetVtxDesc (GX_VA_CLR0, GX_INDEX8);
@@ -135,6 +139,9 @@ draw_init ()
 
 	memset (&view, 0, sizeof (Mtx));
 	guLookAt(view, &cam.pos, &cam.up, &cam.view);
+	guMtxIdentity(m);
+	guMtxTransApply(m, m, 0, 0, -100);
+	guMtxConcat(view, m, mv);
 	GX_LoadPosMtxImm (view, GX_PNMTX0);
 
 	GX_InvVtxCache ();	// update vertex cache
@@ -157,16 +164,8 @@ draw_vert (u8 pos, u8 c, f32 s, f32 t)
 }
 
 static inline void
-draw_square (Mtx v)
+draw_square ()
 {
-	Mtx m;			// model matrix.
-	Mtx mv;			// modelview matrix.
-
-	guMtxIdentity (m);
-	guMtxTransApply (m, m, 0, 0, -100);
-	guMtxConcat (v, m, mv);
-
-	GX_LoadPosMtxImm (mv, GX_PNMTX0);
 	GX_Begin (GX_QUADS, GX_VTXFMT0, 4);
 	draw_vert (0, 0, 0.0, 0.0);
 	draw_vert (1, 0, 1.0, 0.0);
@@ -197,41 +196,32 @@ static void TakeScreenshot()
 
 static void * flip_thread (void *arg)
 {
-	while(1)
+	u32 *tex = (u32*)arg;
+
+	GX_SetCurrentGXThread();
+
+	// clear EFB
+	GX_CopyDisp(xfb, GX_TRUE);
+
+	SDL_mutexP(videomutex);
+
+	while(!quit_flip_thread)
 	{
-		if(quit_flip_thread == 2)
-			break;
-
+		// update texture
+		DCStoreRange((void*)tex[0], tex[1]);
 		// clear texture objects
-		GX_InvVtxCache();
 		GX_InvalidateTexAll();
-		
-		SDL_mutexP(videomutex);
+		draw_square(); // render textured quad
 
-		// load texture into GX
-		DCFlushRange(texturemem, TEXTUREMEM_SIZE);
-
-		GX_LoadTexObj(&texobj, GX_TEXMAP0);
-
-		draw_square(view); // render textured quad
-		GX_SetColorUpdate(GX_TRUE);
-
-		if (quit_flip_thread == 1)
-		{
-			quit_flip_thread = 2;
-			TakeScreenshot();
-		}
-
-		whichfb ^= 1;
-
-		GX_CopyDisp(xfb[whichfb], GX_TRUE);
-		GX_DrawDone();
-		SDL_mutexV(videomutex);
-
-		VIDEO_SetNextFramebuffer(xfb[whichfb]);
-		VIDEO_Flush();
 		VIDEO_WaitVSync();
+		GX_CopyDisp(xfb, GX_FALSE);
+
+		GX_DrawDone();
+
+		SDL_CondWait(videocond, videomutex);
 	}
+	SDL_mutexV(videomutex);
+
 	return NULL;
 }
 
@@ -276,10 +266,12 @@ StartVideoThread()
 static int WII_VideoInit(_THIS, SDL_PixelFormat *vformat)
 {
 	// Set up the modes.
-	mode_640.w = vmode->fbWidth;
-	mode_640.h = vmode->efbHeight;
-	mode_320.w = mode_640.w / 2;
-	mode_320.h = mode_640.h / 2;
+	mode_848.w = 848;
+	mode_848.h = 480;
+	mode_640.w = 640;
+	mode_640.h = 480;
+	mode_320.w = 320;
+	mode_320.h = 240;
 
 	// Set the current format.
 	vformat->BitsPerPixel	= 16;
@@ -296,7 +288,7 @@ static int WII_VideoInit(_THIS, SDL_PixelFormat *vformat)
 
 static SDL_Rect **WII_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
 {
-	return &modes_descending[0];
+	return modes_descending;
 }
 
 static SDL_Surface *WII_SetVideoMode(_THIS, SDL_Surface *current,
@@ -364,7 +356,9 @@ static SDL_Surface *WII_SetVideoMode(_THIS, SDL_Surface *current,
 	SDL_memset(this->hidden->buffer, 0, width * height * bytes_per_pixel);
 
 	// Set up the new mode framebuffer
-	current->flags = (flags & SDL_DOUBLEBUF) | (flags & SDL_FULLSCREEN) | (flags & SDL_HWPALETTE);
+	current->flags = flags & (SDL_FULLSCREEN | SDL_HWPALETTE | SDL_NOFRAME);
+	// Our surface is always double buffered
+	current->flags |= SDL_PREALLOC | SDL_DOUBLEBUF;
 	current->w = width;
 	current->h = height;
 	current->pitch = current->w * bytes_per_pixel;
@@ -532,10 +526,16 @@ static void WII_UpdateRect(_THIS, SDL_Rect *rect)
 static void WII_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 {
 	int i;
+
+	// note that this function doesn't lock - we don't care if this isn't
+	// rendered now, that's what Flip is for
+
 	for (i = 0; i < numrects; i++)
 	{
 		WII_UpdateRect(this, &rects[i]);
 	}
+
+	SDL_CondSignal(videocond);
 }
 
 static void flipHWSurface_8_16(_THIS, SDL_Surface *surface)
@@ -609,6 +609,8 @@ static void flipHWSurface_16_16(_THIS, SDL_Surface *surface)
 	int rowadjust = (this->hidden->pitch % 8) * 4;
 	char *ra = NULL;
 
+	SDL_mutexP(videomutex);
+
 	for (h = 0; h < this->hidden->height; h += 4)
 	{
 		for (w = 0; w < this->hidden->width; w += 4)
@@ -636,6 +638,9 @@ static void flipHWSurface_16_16(_THIS, SDL_Surface *surface)
 			src4 = (long long int *)(ra + rowadjust);
 		}
 	}
+
+	SDL_CondSignal(videocond);
+	SDL_mutexV(videomutex);
 }
 
 static void flipHWSurface_24_16(_THIS, SDL_Surface *surface)
@@ -706,6 +711,11 @@ static void WII_DeleteDevice(SDL_VideoDevice *device)
 {
 	SDL_free(device->hidden);
 	SDL_free(device);
+
+	SDL_DestroyCond(videocond);
+	videocond = 0;
+	SDL_DestroyMutex(videomutex);
+	videomutex=0;
 }
 
 static SDL_VideoDevice *WII_CreateDevice(int devindex)
@@ -729,6 +739,7 @@ static SDL_VideoDevice *WII_CreateDevice(int devindex)
 	SDL_memset(device->hidden, 0, (sizeof *device->hidden));
 
 	videomutex = SDL_CreateMutex();
+	videocond = SDL_CreateCond();
 
 	/* Set the function pointers */
 	device->VideoInit = WII_VideoInit;
@@ -850,8 +861,14 @@ void WII_VideoStart()
 
 void WII_VideoStop()
 {
+	if(videothread == LWP_THREAD_NULL)
+		return;
+
+	SDL_LockMutex(videomutex);
 	quit_flip_thread = 1;
-	if(videothread == LWP_THREAD_NULL) return;
+	SDL_CondSignal(videocond);
+	SDL_UnlockMutex(videomutex);
+
 	LWP_JoinThread(videothread, NULL);
 	videothread = LWP_THREAD_NULL;
 }
