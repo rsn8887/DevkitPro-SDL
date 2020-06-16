@@ -21,7 +21,7 @@
 */
 #include "SDL_config.h"
 
-#ifdef SDL_TIMER_WII
+#ifdef SDL_TIMER_OGC
 
 #include <ogc/lwp_watchdog.h>
 #include <ogc/video.h>
