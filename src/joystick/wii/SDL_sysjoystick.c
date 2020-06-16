@@ -130,10 +130,10 @@ static const u16 sdl_buttons_gc[] =
 	PAD_TRIGGER_R
 };
 
-static int __jswpad_enabled = 1;
-static int __jspad_enabled = 1;
-static int __numwiijoysticks = 4;
-static int __numgcjoysticks = 4;
+static const int __jswpad_enabled = 1;
+static const int __jspad_enabled = 1;
+static const int __numwiijoysticks = 4;
+static const int __numgcjoysticks = 4;
 
 /* Helpers to separate nunchuk vs classic buttons which share the
  * same scan codes. In particular, up on the classic controller is
@@ -164,10 +164,13 @@ static char joy_name[] = "Gamecube 0";
 /* Function to get the device-dependent name of a joystick */
 const char *SDL_SYS_JoystickName(int index)
 {
-	if((index < 4) && (__jswpad_enabled) && (index < __numwiijoysticks))
-	sprintf(joy_name, "Wiimote %d", index);
-	else if((index < 8) && (__jspad_enabled) && (index < (__numgcjoysticks + 4)) && (index> 3))
-	sprintf(joy_name, "Gamecube %d", index);
+	if(index>=0) {
+
+		if((index < 4) && (__jswpad_enabled) && (index < __numwiijoysticks))
+			sprintf(joy_name, "Wiimote %d", index);
+		else if((index < 8) && (__jspad_enabled) && (index < (__numgcjoysticks + 4)) && (index> 3))
+			sprintf(joy_name, "Gamecube %d", index);
+	}
 	return (const char *)joy_name;
 }
 
