@@ -934,13 +934,16 @@ AC_HELP_STRING([--enable-nintendo-wii], [configure SDL to work with Nintendo Wii
         ARCH=nintendo-wii
         WII_CFLAGS="-mrvl -mcpu=750 -meabi -mhard-float \
                      -Wall -O2 \
-                     -I${DEVKITPRO}/libogc/include -DGEKKO"
+                     -I${DEVKITPRO}/libogc/include -DGEKKO \
+                     -I${DEVKITPRO}/portlibs/wii/include \
+                     -I${DEVKITPRO}/portlibs/ppc/include"
         EXTRA_CFLAGS="$EXTRA_CFLAGS $WII_CFLAGS"
         CFLAGS="$CFLAGS $WII_CFLAGS"
         SDL_CFLAGS="$SDL_CFLAGS $WII_CFLAGS"
         SDL_LIBS="-mrvl -mcpu=750 -meabi -mhard-float \
-                  -L${DEVKITPRO}/portlibs/wii/lib $SDL_LIBS \
-                  -L${DEVKITPRO}/libogc/lib -logc"
+                  -L${DEVKITPRO}/portlibs/wii/lib \
+                  -L${DEVKITPRO}/portlibs/ppc/lib $SDL_LIBS \
+                  -L${DEVKITPRO}/libogc/lib/wii -logc"
         AC_DEFINE(SDL_TIMER_WII)
         SOURCES="$SOURCES $srcdir/src/timer/wii/*.c"
         have_timers=yes
