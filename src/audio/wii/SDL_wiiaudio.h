@@ -24,17 +24,26 @@
 #ifndef _SDL_wiiaudio_h
 #define _SDL_wiiaudio_h
 
+#include <ogcsys.h>
+#include <aesndlib.h>
+
 #include "../SDL_sysaudio.h"
 
 /* Hidden "this" pointer for the video functions */
-#define _THIS	SDL_AudioDevice *this
+#define _THIS   SDL_AudioDevice *this
 
-struct SDL_PrivateAudioData {
-	/* The file descriptor for the audio device */
-	Uint8 *mixbuf;
-	Uint32 mixlen;
-	Uint32 write_delay;
-	Uint32 initial_calls;
-};
+#define AUDIOSTACK 8192
+#define SAMPLES_PER_DMA_BUFFER (DSP_STREAMBUFFER_SIZE)
+
+typedef struct SDL_PrivateAudioData {
+    // these go first so they will be aligned
+    Uint8 astack[AUDIOSTACK];
+    short dma_buffers[2][SAMPLES_PER_DMA_BUFFER*2];
+
+    AESNDPB* voice;
+    u32 format;
+    u32 freq;
+    volatile bool stopaudio;
+} WiiAudio;
 
 #endif /* _SDL_dummyaudio_h */

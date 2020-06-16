@@ -31,207 +31,251 @@
 #include "../SDL_audio_c.h"
 
 // Wii audio internal includes.
-#include <ogcsys.h>
-#include <ogc/audio.h>
-#include <ogc/cache.h>
 #include "SDL_wiiaudio.h"
 
-#define SAMPLES_PER_DMA_BUFFER (512)
+#include <stdio.h>
+
+// for memalign
+#include <malloc.h>
 
 static const char WIIAUD_DRIVER_NAME[] = "wii";
-static Uint32 dma_buffers[2][SAMPLES_PER_DMA_BUFFER*8] __attribute__((aligned(32)));
-static int dma_buffers_size[2] = { SAMPLES_PER_DMA_BUFFER*4, SAMPLES_PER_DMA_BUFFER*4 };
-static Uint8 whichab = 0;
 
-#define AUDIOSTACK 16384*2
-static lwpq_t audioqueue;
-static lwp_t athread = LWP_THREAD_NULL;
-static Uint8 astack[AUDIOSTACK];
-static bool stopaudio = false;
-static int currentfreq;
+#define DMA_BUFFER_SIZE (SAMPLES_PER_DMA_BUFFER*2*sizeof(short))
+
+static lwp_t athread;
+static WiiAudio *current = NULL;
 
 /****************************************************************************
  * Audio Threading
  ***************************************************************************/
 static void *
-AudioThread (void *arg)
+AudioThread (WiiAudio *private)
 {
+	u32 buffer_size;
+	Uint8 whichab = 1;
+
 	while (1)
 	{
-		if(stopaudio)
+		LWP_SuspendThread(athread);
+		if (private->stopaudio)
 			break;
 
-		memset(dma_buffers[whichab], 0, SAMPLES_PER_DMA_BUFFER*4);
+		DCZeroRange(private->dma_buffers[whichab], DMA_BUFFER_SIZE);
+		buffer_size = DMA_BUFFER_SIZE;
 
 		// Is the device ready?
-		if (!current_audio || current_audio->paused)
+		if (current_audio && !current_audio->paused)
 		{
-			DCFlushRange(dma_buffers[whichab], SAMPLES_PER_DMA_BUFFER*4);
-			dma_buffers_size[whichab] = SAMPLES_PER_DMA_BUFFER*4;
-		}
-		else if (current_audio->convert.needed) // Is conversion required?
-		{
-			SDL_mutexP(current_audio->mixer_lock);
-			// Get the client to produce audio
-			current_audio->spec.callback(
-				current_audio->spec.userdata,
-				current_audio->convert.buf,
-				current_audio->convert.len);
-			SDL_mutexV(current_audio->mixer_lock);
+			SDL_LockMutex(current_audio->mixer_lock);
 
-			// Convert the audio
-			SDL_ConvertAudio(&current_audio->convert);
+			if (current_audio->convert.needed)
+			{
+				// Get the client to produce audio
+				current_audio->spec.callback(
+						current_audio->spec.userdata,
+						current_audio->convert.buf,
+						current_audio->convert.len);
 
-			// Copy from SDL buffer to DMA buffer
-			memcpy(dma_buffers[whichab], current_audio->convert.buf, current_audio->convert.len_cvt);
-			DCFlushRange(dma_buffers[whichab], current_audio->convert.len_cvt);
-			dma_buffers_size[whichab] = current_audio->convert.len_cvt;
+				// Convert the audio
+				SDL_ConvertAudio(&current_audio->convert);
+
+				// Copy from SDL buffer to DMA buffer
+				memcpy(private->dma_buffers[whichab], current_audio->convert.buf, current_audio->convert.len_cvt);
+				buffer_size = current_audio->convert.len_cvt;
+			} else {
+				current_audio->spec.callback(
+					current_audio->spec.userdata,
+					(Uint8 *)(private->dma_buffers[whichab]),
+					DMA_BUFFER_SIZE);
+				buffer_size = DMA_BUFFER_SIZE;
+			}
+
+			SDL_UnlockMutex(current_audio->mixer_lock);
 		}
-		else
+		else if (current_audio && (current_audio->spec.format&0x8000)==0) // hack
 		{
-			SDL_mutexP(current_audio->mixer_lock);
-			current_audio->spec.callback(
-				current_audio->spec.userdata,
-				(Uint8 *)dma_buffers[whichab],
-				SAMPLES_PER_DMA_BUFFER*4);
-			DCFlushRange(dma_buffers[whichab], SAMPLES_PER_DMA_BUFFER*4);
-			dma_buffers_size[whichab] = SAMPLES_PER_DMA_BUFFER*4;
-			SDL_mutexV(current_audio->mixer_lock);
+			int i;
+			// if it's an unsigned format use 0x8000 for silence (16-bit)
+			short fill = 0x8000;
+
+			// 0x80 for 8-bit formats
+			if (current_audio->spec.format&0x08)
+				fill |= 0x80;
+
+			for (i=0; i < SAMPLES_PER_DMA_BUFFER*2; i++)
+				private->dma_buffers[whichab][i] = fill;
 		}
-		LWP_ThreadSleep (audioqueue);
+
+		AESND_SetVoiceBuffer(private->voice, private->dma_buffers[whichab], buffer_size);
+		whichab ^= 1;
 	}
 	return NULL;
 }
 
 /****************************************************************************
  * DMACallback
- * Playback audio and signal audio thread that more samples are required
+ * signal audio thread that more samples are required
  ***************************************************************************/
 static void
-DMACallback()
+DMACallback(AESNDPB *pb, u32 state)
 {
-	whichab ^= 1;
-	AUDIO_InitDMA ((Uint32)dma_buffers[whichab], dma_buffers_size[whichab]);
-	LWP_ThreadSignal (audioqueue);
+	if (state == VOICE_STATE_STREAM)
+		LWP_ResumeThread(athread);
 }
 
-void WII_AudioStop()
+void WII_AudioStop(WiiAudio *private)
 {
-	AUDIO_StopDMA ();
-	AUDIO_RegisterDMACallback(0);
-	stopaudio = true;
-	LWP_ThreadSignal(audioqueue);
-	LWP_JoinThread(athread, NULL);
-	LWP_CloseQueue (audioqueue);
-	athread = LWP_THREAD_NULL;
+	if (private==NULL) {
+		if (current==NULL)
+			return;
+		private = current;
+	}
+
+	if (private->voice) {
+		AESND_SetVoiceStop(private->voice, 1);
+		AESND_FreeVoice(private->voice);
+		private->voice = NULL;
+	}
+
+	private->stopaudio = true;
+	if (athread != LWP_THREAD_NULL) {
+		LWP_ResumeThread(athread);
+		LWP_JoinThread(athread, NULL);
+		athread = LWP_THREAD_NULL;
+	}
+
+	AESND_Pause(1);
+	// this function is broken
+	//AESND_Reset();
 }
 
-void WII_AudioStart()
+int WII_AudioStart(WiiAudio *private)
 {
-	if (currentfreq == 32000)
-		AUDIO_SetDSPSampleRate(AI_SAMPLERATE_32KHZ);
-	else
-		AUDIO_SetDSPSampleRate(AI_SAMPLERATE_48KHZ);
+	if (private==NULL) {
+		if (current==NULL)
+			return -1;
+		private = current;
+	}
 
-	// startup conversion thread
-	stopaudio = false;
-	LWP_InitQueue (&audioqueue);
-	LWP_CreateThread (&athread, AudioThread, NULL, astack, AUDIOSTACK, 67);
+	memset(private->dma_buffers, 0, sizeof(private->dma_buffers));
+	private->stopaudio = false;
+	private->voice = AESND_AllocateVoice(DMACallback);
+	if (private->voice==NULL)
+		return -1;
 
-	// Start the first chunk of audio playing
-	AUDIO_RegisterDMACallback(DMACallback);
-	DMACallback();
-	AUDIO_StartDMA();
+	if (LWP_CreateThread(&athread, (void*(*)(void*))AudioThread, private, private->astack, AUDIOSTACK, 80) < 0) {
+		AESND_FreeVoice(private->voice);
+		private->voice = NULL;
+		return -1;
+	}
+
+	// start audio
+	// this is retarded. Why isn't there one function to do all this shit?
+	AESND_SetVoiceFormat(private->voice, private->format);
+	AESND_SetVoiceFrequency(private->voice, private->freq);
+	AESND_SetVoiceBuffer(private->voice, private->dma_buffers[0], DMA_BUFFER_SIZE);
+	AESND_SetVoiceStream(private->voice, true);
+	AESND_SetVoiceStop(private->voice, 0);
+	AESND_Pause(0);
+
+	current = private;
+	return 1;
 }
 
 static int WIIAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 {
-	if (spec->freq != 32000 && spec->freq != 48000)
-		spec->freq = 32000;
+	u32 format;
+	WiiAudio *private = (WiiAudio*)(this->hidden);
 
-	// Set up actual spec.
-	spec->format	= AUDIO_S16MSB;
-	spec->channels	= 2;
-	spec->samples	= SAMPLES_PER_DMA_BUFFER;
+	if (spec->freq <= 0 || spec->freq > 144000)
+		spec->freq = DSP_DEFAULT_FREQ;
+
+	// default sample size = 1 byte (1 channel @ 8 bits)
+	spec->samples = DMA_BUFFER_SIZE;
+
+	// no support for little endian or 16 bit unsigned
+	switch (spec->format) {
+		case AUDIO_U8:
+			format = VOICE_MONO8_UNSIGNED;
+			break;
+		case AUDIO_S8:
+			format = VOICE_MONO8;
+			break;
+		// anything else needs conversion to signed 16 big-endian
+		default:
+		case AUDIO_U16LSB:
+		case AUDIO_U16MSB:
+		case AUDIO_S16LSB:
+			spec->format = AUDIO_S16MSB;
+			// fallthrough
+		case AUDIO_S16MSB:
+			format = VOICE_MONO16;
+			// samples are 16 bits
+			spec->samples >>= 1;
+	}
+
+	// support 2 channels max
+	if (spec->channels > 2)
+		spec->channels = 2;
+
+	if (spec->channels == 2) {
+		++format;
+		// 2 values for each sample
+		spec->samples >>= 1;
+	}
+
 	spec->padding	= 0;
 	SDL_CalculateAudioSpec(spec);
 
-	memset(dma_buffers[0], 0, sizeof(dma_buffers[0]));
-	memset(dma_buffers[1], 0, sizeof(dma_buffers[0]));
+	private->format = format;
+	// AESND will convert frequency as required
+	private->freq = spec->freq;
 
-	currentfreq = spec->freq;
-	WII_AudioStart();
-
-	return 1;
-}
-
-void static WIIAUD_WaitAudio(_THIS)
-{
-
-}
-
-static void WIIAUD_PlayAudio(_THIS)
-{
-
-}
-
-static Uint8 *WIIAUD_GetAudioBuf(_THIS)
-{
-	return NULL;
+	return WII_AudioStart(private);
 }
 
 static void WIIAUD_CloseAudio(_THIS)
 {
-	// Stop any DMA going on
-	AUDIO_StopDMA();
-
-	// terminate conversion thread
-	LWP_ThreadSignal(audioqueue);
+	WII_AudioStop((WiiAudio*)(this->hidden));
+	current = NULL;
 }
 
-static void WIIAUD_DeleteDevice(SDL_AudioDevice *device)
+static void WIIAUD_DeleteDevice(_THIS)
 {
-	// Forget the DMA callback
-	AUDIO_RegisterDMACallback(0);
+	WII_AudioStop((WiiAudio*)(this->hidden));
 
-	// Stop any DMA going on
-	AUDIO_StopDMA();
-
-	// terminate conversion thread
-	LWP_ThreadSignal(audioqueue);
-
-	SDL_free(device->hidden);
-	SDL_free(device);
+	free(this->hidden);
+	SDL_free(this);
 }
 
 static SDL_AudioDevice *WIIAUD_CreateDevice(int devindex)
 {
 	SDL_AudioDevice *this;
 
+	athread = LWP_THREAD_NULL;
+
 	/* Initialize all variables that we clean on shutdown */
 	this = (SDL_AudioDevice *)SDL_malloc(sizeof(SDL_AudioDevice));
 	if ( this ) {
 		SDL_memset(this, 0, (sizeof *this));
-		this->hidden = (struct SDL_PrivateAudioData *)
-				SDL_malloc((sizeof *this->hidden));
+		this->hidden = (WiiAudio*)memalign(32, sizeof(WiiAudio));
 	}
 	if ( (this == NULL) || (this->hidden == NULL) ) {
 		SDL_OutOfMemory();
-		if ( this ) {
-			SDL_free(this);
-		}
-		return(0);
+		SDL_free(this);
+		return NULL;
 	}
-	SDL_memset(this->hidden, 0, (sizeof *this->hidden));
+	SDL_memset(this->hidden, 0, sizeof(WiiAudio));
 
 	// Initialise the Wii side of the audio system
-	AUDIO_Init(0);
+	AESND_Init();
+	AESND_Pause(1);
 
 	/* Set the function pointers */
 	this->OpenAudio = WIIAUD_OpenAudio;
-	this->WaitAudio = WIIAUD_WaitAudio;
-	this->PlayAudio = WIIAUD_PlayAudio;
-	this->GetAudioBuf = WIIAUD_GetAudioBuf;
+	//this->WaitAudio = WIIAUD_WaitAudio;
+	//this->PlayAudio = WIIAUD_PlayAudio;
+	//this->GetAudioBuf = WIIAUD_GetAudioBuf;
 	this->CloseAudio = WIIAUD_CloseAudio;
 	this->free = WIIAUD_DeleteDevice;
 
