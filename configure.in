@@ -947,8 +947,8 @@ AC_HELP_STRING([--enable-nintendo-wii], [configure SDL to work with Nintendo Wii
         AC_DEFINE(SDL_TIMER_WII)
         SOURCES="$SOURCES $srcdir/src/timer/wii/*.c"
         have_timers=yes
-        AC_DEFINE(SDL_AUDIO_DRIVER_WII)
-        SOURCES="$SOURCES $srcdir/src/audio/wii/*.c"
+        AC_DEFINE(SDL_AUDIO_DRIVER_OGC)
+        SOURCES="$SOURCES $srcdir/src/audio/ogc/*.c"
         have_audio=yes
         AC_DEFINE(SDL_JOYSTICK_WII)
         SOURCES="$SOURCES $srcdir/src/joystick/wii/*.c"

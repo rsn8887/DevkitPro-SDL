@@ -185,7 +185,7 @@
 #undef SDL_AUDIO_DRIVER_SNDMGR
 #undef SDL_AUDIO_DRIVER_SUNAUDIO
 #undef SDL_AUDIO_DRIVER_WAVEOUT
-#undef SDL_AUDIO_DRIVER_WII
+#undef SDL_AUDIO_DRIVER_OGC
 
 /* Enable various cdrom drivers */
 #undef SDL_CDROM_AIX

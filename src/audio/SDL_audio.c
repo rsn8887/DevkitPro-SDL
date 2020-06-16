@@ -113,8 +113,8 @@ static AudioBootStrap *bootstrap[] = {
 #if SDL_AUDIO_DRIVER_EPOCAUDIO
 	&EPOCAudio_bootstrap,
 #endif
-#if SDL_AUDIO_DRIVER_WII
-	&WIIAUD_bootstrap,
+#if SDL_AUDIO_DRIVER_OGC
+	&OGCAUD_bootstrap,
 #endif
 	NULL
 };

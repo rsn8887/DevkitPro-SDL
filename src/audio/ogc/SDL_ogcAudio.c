@@ -31,25 +31,25 @@
 #include "../SDL_audio_c.h"
 
 // Wii audio internal includes.
-#include "SDL_wiiaudio.h"
+#include "SDL_ogcAudio.h"
 
 #include <stdio.h>
 
 // for memalign
 #include <malloc.h>
 
-static const char WIIAUD_DRIVER_NAME[] = "wii";
+static const char OGCAUD_DRIVER_NAME[] = "ogc";
 
 #define DMA_BUFFER_SIZE (SAMPLES_PER_DMA_BUFFER*2*sizeof(short))
 
 static lwp_t athread;
-static WiiAudio *current = NULL;
+static ogcAudio *current = NULL;
 
 /****************************************************************************
  * Audio Threading
  ***************************************************************************/
 static void *
-AudioThread (WiiAudio *private)
+AudioThread (ogcAudio *private)
 {
 	u32 buffer_size;
 	Uint8 whichab = 1;
@@ -123,7 +123,7 @@ DMACallback(AESNDPB *pb, u32 state)
 		LWP_ResumeThread(athread);
 }
 
-void WII_AudioStop(WiiAudio *private)
+void OGC_AudioStop(ogcAudio *private)
 {
 	if (private==NULL) {
 		if (current==NULL)
@@ -149,7 +149,7 @@ void WII_AudioStop(WiiAudio *private)
 	//AESND_Reset();
 }
 
-int WII_AudioStart(WiiAudio *private)
+int OGC_AudioStart(ogcAudio *private)
 {
 	if (private==NULL) {
 		if (current==NULL)
@@ -182,10 +182,10 @@ int WII_AudioStart(WiiAudio *private)
 	return 1;
 }
 
-static int WIIAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
+static int OGCAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 {
 	u32 format;
-	WiiAudio *private = (WiiAudio*)(this->hidden);
+	ogcAudio *private = (ogcAudio*)(this->hidden);
 
 	if (spec->freq <= 0 || spec->freq > 144000)
 		spec->freq = DSP_DEFAULT_FREQ;
@@ -231,24 +231,24 @@ static int WIIAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 	// AESND will convert frequency as required
 	private->freq = spec->freq;
 
-	return WII_AudioStart(private);
+	return OGC_AudioStart(private);
 }
 
-static void WIIAUD_CloseAudio(_THIS)
+static void OGCAUD_CloseAudio(_THIS)
 {
-	WII_AudioStop((WiiAudio*)(this->hidden));
+	OGC_AudioStop((ogcAudio*)(this->hidden));
 	current = NULL;
 }
 
-static void WIIAUD_DeleteDevice(_THIS)
+static void OGCAUD_DeleteDevice(_THIS)
 {
-	WII_AudioStop((WiiAudio*)(this->hidden));
+	OGC_AudioStop((ogcAudio*)(this->hidden));
 
 	free(this->hidden);
 	SDL_free(this);
 }
 
-static SDL_AudioDevice *WIIAUD_CreateDevice(int devindex)
+static SDL_AudioDevice *OGCAUD_CreateDevice(int devindex)
 {
 	SDL_AudioDevice *this;
 
@@ -258,36 +258,36 @@ static SDL_AudioDevice *WIIAUD_CreateDevice(int devindex)
 	this = (SDL_AudioDevice *)SDL_malloc(sizeof(SDL_AudioDevice));
 	if ( this ) {
 		SDL_memset(this, 0, (sizeof *this));
-		this->hidden = (WiiAudio*)memalign(32, sizeof(WiiAudio));
+		this->hidden = (ogcAudio*)memalign(32, sizeof(ogcAudio));
 	}
 	if ( (this == NULL) || (this->hidden == NULL) ) {
 		SDL_OutOfMemory();
 		SDL_free(this);
 		return NULL;
 	}
-	SDL_memset(this->hidden, 0, sizeof(WiiAudio));
+	SDL_memset(this->hidden, 0, sizeof(ogcAudio));
 
-	// Initialise the Wii side of the audio system
+	// Initialise the ogc side of the audio system
 	AESND_Init();
 	AESND_Pause(1);
 
 	/* Set the function pointers */
-	this->OpenAudio = WIIAUD_OpenAudio;
+	this->OpenAudio = OGCAUD_OpenAudio;
 	//this->WaitAudio = WIIAUD_WaitAudio;
 	//this->PlayAudio = WIIAUD_PlayAudio;
 	//this->GetAudioBuf = WIIAUD_GetAudioBuf;
-	this->CloseAudio = WIIAUD_CloseAudio;
-	this->free = WIIAUD_DeleteDevice;
+	this->CloseAudio = OGCAUD_CloseAudio;
+	this->free = OGCAUD_DeleteDevice;
 
 	return this;
 }
 
-static int WIIAUD_Available(void)
+static int OGCAUD_Available(void)
 {
 	return 1;
 }
 
-AudioBootStrap WIIAUD_bootstrap = {
-	WIIAUD_DRIVER_NAME, "SDL Wii audio driver",
-	WIIAUD_Available, WIIAUD_CreateDevice
+AudioBootStrap OGCAUD_bootstrap = {
+	OGCAUD_DRIVER_NAME, "SDL ogc audio driver",
+	OGCAUD_Available, OGCAUD_CreateDevice
 };

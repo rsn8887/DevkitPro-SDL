@@ -21,8 +21,8 @@
 */
 #include "SDL_config.h"
 
-#ifndef _SDL_wiiaudio_h
-#define _SDL_wiiaudio_h
+#ifndef _SDL_ogcAudio_h
+#define _SDL_ogcAudio_h
 
 #include <ogcsys.h>
 #include <aesndlib.h>
@@ -44,6 +44,6 @@ typedef struct SDL_PrivateAudioData {
     u32 format;
     u32 freq;
     volatile bool stopaudio;
-} WiiAudio;
+} ogcAudio;
 
 #endif /* _SDL_dummyaudio_h */
