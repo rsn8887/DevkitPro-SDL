@@ -979,7 +979,7 @@ AC_HELP_STRING([--enable-nintendo-gamecube], [configure SDL to work with Nintend
         EXTRA_CFLAGS="$EXTRA_CFLAGS $GAMECUBE_CFLAGS"
         CFLAGS="$CFLAGS $GAMECUBE_CFLAGS"
         SDL_CFLAGS="$SDL_CFLAGS $GAMECUBE_CFLAGS"
-        SDL_LIBS="-mrvl -mcpu=750 -meabi -mhard-float \
+        SDL_LIBS="-mogc -mcpu=750 -meabi -mhard-float \
                   -L${DEVKITPRO}/portlibs/gamecube/lib \
                   -L${DEVKITPRO}/portlibs/ppc/lib -lSDLmain $SDL_LIBS \
                   -L${DEVKITPRO}/libogc/lib/cube -laesnd -lfat -logc -lm"
