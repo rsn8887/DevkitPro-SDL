@@ -942,8 +942,8 @@ AC_HELP_STRING([--enable-nintendo-wii], [configure SDL to work with Nintendo Wii
         SDL_CFLAGS="$SDL_CFLAGS $WII_CFLAGS"
         SDL_LIBS="-mrvl -mcpu=750 -meabi -mhard-float \
                   -L${DEVKITPRO}/portlibs/wii/lib \
-                  -L${DEVKITPRO}/portlibs/ppc/lib $SDL_LIBS \
-                  -L${DEVKITPRO}/libogc/lib/wii -logc"
+                  -L${DEVKITPRO}/portlibs/ppc/lib -lSDLmain $SDL_LIBS \
+                  -L${DEVKITPRO}/libogc/lib/wii -laesnd -lwiiuse -lbte -lwiikeyboard -lfat -logc -lm"
         AC_DEFINE(SDL_TIMER_OGC)
         SOURCES="$SOURCES $srcdir/src/timer/ogc/*.c"
         have_timers=yes
@@ -981,8 +981,8 @@ AC_HELP_STRING([--enable-nintendo-gamecube], [configure SDL to work with Nintend
         SDL_CFLAGS="$SDL_CFLAGS $GAMECUBE_CFLAGS"
         SDL_LIBS="-mrvl -mcpu=750 -meabi -mhard-float \
                   -L${DEVKITPRO}/portlibs/gamecube/lib \
-                  -L${DEVKITPRO}/portlibs/ppc/lib $SDL_LIBS \
-                  -L${DEVKITPRO}/libogc/lib/cube -logc"
+                  -L${DEVKITPRO}/portlibs/ppc/lib -lSDLmain $SDL_LIBS \
+                  -L${DEVKITPRO}/libogc/lib/cube -laesnd -lfat -logc -lm"
         AC_DEFINE(SDL_TIMER_OGC)
         SOURCES="$SOURCES $srcdir/src/timer/ogc/*.c"
         have_timers=yes
