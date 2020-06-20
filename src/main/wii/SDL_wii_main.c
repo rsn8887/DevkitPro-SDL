@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 /* SDL includes */
-#include "../../video/wii/SDL_wiivideo.h"
+#include "../../video/ogc/SDL_ogc_video.h"
 
 /* OGC includes */
 #include <fat.h>
@@ -52,7 +52,6 @@ void Terminate()
 /* Entry point */
 int main(int argc, char *argv[])
 {
-#ifdef HW_RVL
 	L2Enhance();
 	u32 version = IOS_GetVersion();
 	s32 preferred = IOS_GetPreferredVersion();
@@ -65,16 +64,13 @@ int main(int argc, char *argv[])
 	WPAD_SetPowerButtonCallback((WPADShutdownCallback)ShutdownCB);
 	SYS_SetPowerCallback(ShutdownCB);
 	SYS_SetResetCallback(ResetCB);
-#endif
 	PAD_Init();
-	WII_InitVideoSystem();
-#ifdef HW_RVL
+	OGC_InitVideoSystem();
 	WPAD_SetDataFormat(WPAD_CHAN_ALL,WPAD_FMT_BTNS_ACC_IR);
 	WPAD_SetVRes(WPAD_CHAN_ALL, 640, 480);
 
 	MOUSE_Init();
 	KEYBOARD_Init(NULL);
-#endif
     fatInitDefault();
 	/* Call the user's main function */
 	return(SDL_main(argc, argv));

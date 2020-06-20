@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 /* SDL includes */
-#include "../../video/gamecube/SDL_gamecube_video.h"
+#include "../../video/ogc/SDL_ogc_video.h"
 
 /* OGC includes */
 #include <fat.h>
@@ -18,9 +18,13 @@ int main(int argc, char *argv[])
 {
 //	SYS_SetPowerCallback(ShutdownCB);
 //	SYS_SetResetCallback(ResetCB);
+	printf("PAD Init\n");
 	PAD_Init();
-	GAMECUBE_InitVideoSystem();
+	printf("video init\n");
+	OGC_InitVideoSystem();
+	printf("fat init\n");
 	fatInitDefault();
 	/* Call the user's main function */
+	printf("call main\n");
 	return(SDL_main(argc, argv));
 }

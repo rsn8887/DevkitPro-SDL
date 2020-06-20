@@ -31,7 +31,6 @@
 #include <wiikeyboard/keyboard.h>
 #include <ogc/pad.h>
 
-#include "SDL_wiivideo.h"
 #include "SDL_wiievents_c.h"
 
 static SDLKey keymap[232];

@@ -29,30 +29,48 @@
 #include "SDL_timer.h"
 #include "SDL_thread.h"
 
-// SDL Gamecube specifics.
+// SDL ogc specifics.
 #include <gccore.h>
 #include <ogcsys.h>
 #include <malloc.h>
-#include "SDL_gamecube_video.h"
+#include <wiiuse/wpad.h>
+#include "SDL_ogc_video.h"
+
+#ifdef __wii__
+#include "../wii/SDL_wiievents_c.h"
+#endif
+
+#ifdef __gamecube__
+#include "../gamecube/SDL_gamecube_events_c.h"
+#endif
+
+
 #include <ogc/machine/processor.h>
 
-static const char	GAMECUBEVID_DRIVER_NAME[] = "gamecube";
+static const char	OGCVID_DRIVER_NAME[] = "ogc-video";
 static lwp_t videothread = LWP_THREAD_NULL;
 static SDL_mutex *videomutex = NULL;
 static SDL_cond *videocond = NULL;
-static GamecubeVideo *current = NULL;
+static ogcVideo *current = NULL;
 
 int vresx=0, vresy=0;
 
 /*** SDL ***/
 static SDL_Rect mode_320, mode_640;
+#ifdef __wii__
+static SDL_Rect mode_848;
+#endif
 
 static SDL_Rect* modes_descending[] =
 {
+#ifdef __wii__
+	&mode_848,
+#endif
 	&mode_640,
 	&mode_320,
 	NULL
 };
+
 
 /*** 2D Video ***/
 #define HASPECT 			320
@@ -268,7 +286,7 @@ StartVideoThread(void *args)
 	}
 }
 
-void GAMECUBE_VideoStart(GamecubeVideo *private)
+void OGC_VideoStart(ogcVideo *private)
 {
 	if (private==NULL) {
 		if (current==NULL)
@@ -279,10 +297,13 @@ void GAMECUBE_VideoStart(GamecubeVideo *private)
 	SetupGX();
 	draw_init(private->palette, private->texturemem);
 	StartVideoThread(&private->texturemem);
+#ifdef __wii__
+	WPAD_SetVRes(WPAD_CHAN_0, vresx+vresx/4, vresy+vresy/4);
+#endif
 	current = private;
 }
 
-void WII_VideoStop()
+void OGC_VideoStop()
 {
 	if(videothread == LWP_THREAD_NULL)
 		return;
@@ -296,9 +317,13 @@ void WII_VideoStop()
 	videothread = LWP_THREAD_NULL;
 }
 
-static int GAMECUBE_VideoInit(_THIS, SDL_PixelFormat *vformat)
+static int OGC_VideoInit(_THIS, SDL_PixelFormat *vformat)
 {
 	// Set up the modes.
+#ifdef __wii__
+	mode_848.w = 848;
+	mode_848.h = 480;
+#endif
 	mode_640.w = 640;
 	mode_640.h = 480;
 	mode_320.w = 320;
@@ -318,12 +343,12 @@ static int GAMECUBE_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	return 0;
 }
 
-static SDL_Rect **GAMECUBE_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
+static SDL_Rect **OGC_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
 {
 	return modes_descending;
 }
 
-static SDL_Surface *GAMECUBE_SetVideoMode(_THIS, SDL_Surface *current,
+static SDL_Surface *OGC_SetVideoMode(_THIS, SDL_Surface *current,
 								   int width, int height, int bpp, Uint32 flags)
 {
 	SDL_Rect* 		mode;
@@ -359,7 +384,7 @@ static SDL_Surface *GAMECUBE_SetVideoMode(_THIS, SDL_Surface *current,
 
 	bytes_per_pixel = bpp / 8;
 
-	WII_VideoStop();
+	OGC_VideoStop();
 
 	free(this->hidden->buffer);
 	free(this->hidden->texturemem);
@@ -425,28 +450,28 @@ static SDL_Surface *GAMECUBE_SetVideoMode(_THIS, SDL_Surface *current,
 	vresx = currentwidth;
 	vresy = currentheight;
 
-	GAMECUBE_VideoStart(this->hidden);
+	OGC_VideoStart(this->hidden);
 
 	return current;
 }
 
 /* We don't actually allow hardware surfaces other than the main one */
-static int GAMECUBE_AllocHWSurface(_THIS, SDL_Surface *surface)
+static int OGC_AllocHWSurface(_THIS, SDL_Surface *surface)
 {
 	return(-1);
 }
 
-static void GAMECUBE_FreeHWSurface(_THIS, SDL_Surface *surface)
+static void OGC_FreeHWSurface(_THIS, SDL_Surface *surface)
 {
 	return;
 }
 
-static int GAMECUBE_LockHWSurface(_THIS, SDL_Surface *surface)
+static int OGC_LockHWSurface(_THIS, SDL_Surface *surface)
 {
 	return(0);
 }
 
-static void GAMECUBE_UnlockHWSurface(_THIS, SDL_Surface *surface)
+static void OGC_UnlockHWSurface(_THIS, SDL_Surface *surface)
 {
 	return;
 }
@@ -589,7 +614,7 @@ static void flipHWSurface_16_16(_THIS, const SDL_Surface* const surface)
 	SDL_mutexV(videomutex);
 }
 
-static void GAMECUBE_UpdateRect(_THIS, SDL_Rect *rect)
+static void OGC_UpdateRect(_THIS, SDL_Rect *rect)
 {
 	const SDL_Surface* const screen = this->screen;
 
@@ -612,7 +637,7 @@ static void GAMECUBE_UpdateRect(_THIS, SDL_Rect *rect)
 	}
 }
 
-static void GAMECUBE_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
+static void OGC_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 {
 	int i;
 
@@ -621,7 +646,7 @@ static void GAMECUBE_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 
 	for (i = 0; i < numrects; i++)
 	{
-		GAMECUBE_UpdateRect(this, rects+i);
+		OGC_UpdateRect(this, rects+i);
 	}
 
 	SDL_CondSignal(videocond);
@@ -630,16 +655,16 @@ static void GAMECUBE_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 static void flipHWSurface_24_16(_THIS, SDL_Surface *surface)
 {
 	SDL_Rect screen_rect = {0, 0, this->hidden->width, this->hidden->height};
-	GAMECUBE_UpdateRects(this, 1, &screen_rect);
+	OGC_UpdateRects(this, 1, &screen_rect);
 }
 
 static void flipHWSurface_32_16(_THIS, SDL_Surface *surface)
 {
 	SDL_Rect screen_rect = {0, 0, this->hidden->width, this->hidden->height};
-	GAMECUBE_UpdateRects(this, 1, &screen_rect);
+	OGC_UpdateRects(this, 1, &screen_rect);
 }
 
-static int GAMECUBE_FlipHWSurface(_THIS, SDL_Surface *surface)
+static int OGC_FlipHWSurface(_THIS, SDL_Surface *surface)
 {
 	switch(surface->format->BytesPerPixel)
 	{
@@ -660,7 +685,7 @@ static int GAMECUBE_FlipHWSurface(_THIS, SDL_Surface *surface)
 	return 0;
 }
 
-static int GAMECUBE_SetColors(_THIS, int first_color, int color_count, SDL_Color *colors)
+static int OGC_SetColors(_THIS, int first_color, int color_count, SDL_Color *colors)
 {
 	const int last_color = first_color + color_count;
 	Uint16* const palette = this->hidden->palette;
@@ -687,9 +712,9 @@ static int GAMECUBE_SetColors(_THIS, int first_color, int color_count, SDL_Color
 	return(1);
 }
 
-static void GAMECUBE_VideoQuit(_THIS)
+static void OGC_VideoQuit(_THIS)
 {
-	WII_VideoStop();
+	OGC_VideoStop();
 	GX_AbortFrame();
 	GX_Flush();
 
@@ -704,7 +729,7 @@ static void GAMECUBE_VideoQuit(_THIS)
 	this->hidden->texturemem = NULL;
 }
 
-static void GAMECUBE_DeleteDevice(SDL_VideoDevice *device)
+static void OGC_DeleteDevice(SDL_VideoDevice *device)
 {
 	free(device->hidden);
 	SDL_free(device);
@@ -715,7 +740,7 @@ static void GAMECUBE_DeleteDevice(SDL_VideoDevice *device)
 	videomutex=0;
 }
 
-static SDL_VideoDevice *GAMECUBE_CreateDevice(int devindex)
+static SDL_VideoDevice *OGC_CreateDevice(int devindex)
 {
 	SDL_VideoDevice *device;
 
@@ -739,37 +764,45 @@ static SDL_VideoDevice *GAMECUBE_CreateDevice(int devindex)
 	videocond = SDL_CreateCond();
 
 	/* Set the function pointers */
-	device->VideoInit = GAMECUBE_VideoInit;
-	device->ListModes = GAMECUBE_ListModes;
-	device->SetVideoMode = GAMECUBE_SetVideoMode;
-	device->SetColors = GAMECUBE_SetColors;
-	device->UpdateRects = GAMECUBE_UpdateRects;
-	device->VideoQuit = GAMECUBE_VideoQuit;
-	device->AllocHWSurface = GAMECUBE_AllocHWSurface;
-	device->LockHWSurface = GAMECUBE_LockHWSurface;
-	device->UnlockHWSurface = GAMECUBE_UnlockHWSurface;
-	device->FlipHWSurface = GAMECUBE_FlipHWSurface;
-	device->FreeHWSurface = GAMECUBE_FreeHWSurface;
+	device->VideoInit = OGC_VideoInit;
+	device->ListModes = OGC_ListModes;
+	device->SetVideoMode = OGC_SetVideoMode;
+	device->SetColors = OGC_SetColors;
+	device->UpdateRects = OGC_UpdateRects;
+	device->VideoQuit = OGC_VideoQuit;
+	device->AllocHWSurface = OGC_AllocHWSurface;
+	device->LockHWSurface = OGC_LockHWSurface;
+	device->UnlockHWSurface = OGC_UnlockHWSurface;
+	device->FlipHWSurface = OGC_FlipHWSurface;
+	device->FreeHWSurface = OGC_FreeHWSurface;
+#ifdef __wii__
+	device->InitOSKeymap = WII_InitOSKeymap;
+	device->PumpEvents = WII_PumpEvents;
+#endif
+#ifdef __gamecube__
+	device->InitOSKeymap = GAMECUBE_InitOSKeymap;
+	device->PumpEvents = GAMECUBE_PumpEvents;
+#endif
 	device->input_grab = SDL_GRAB_ON;
 
-	device->free = GAMECUBE_DeleteDevice;
+	device->free = OGC_DeleteDevice;
 
-	GAMECUBE_InitVideoSystem();
+	OGC_InitVideoSystem();
 	return device;
 }
 
-static int GAMECUBE_Available(void)
+static int OGC_Available(void)
 {
 	return(1);
 }
 
-VideoBootStrap GAMECUBE_bootstrap = {
-	GAMECUBEVID_DRIVER_NAME, "Gamecube video driver",
-	GAMECUBE_Available, GAMECUBE_CreateDevice
+VideoBootStrap OGC_bootstrap = {
+	OGCVID_DRIVER_NAME, "ogc video driver",
+	OGC_Available, OGC_CreateDevice
 };
 
 void
-GAMECUBE_InitVideoSystem()
+OGC_InitVideoSystem()
 {
 	/* Initialise the video system */
 	VIDEO_Init();
@@ -807,7 +840,29 @@ GAMECUBE_InitVideoSystem()
 	SetupGX();
 }
 
-void GAMECUBE_ChangeSquare(int xscale, int yscale, int xshift, int yshift)
+void OGC_SetWidescreen(int wide)
+{
+	int width;
+	if(wide) {
+		width = 678;
+	}
+	else
+		width = 640;
+
+	vmode->viWidth = width;
+	vmode->viXOrigin = (VI_MAX_WIDTH_NTSC - width) / 2;
+
+	VIDEO_Configure (vmode);
+
+	if (xfb)
+		VIDEO_ClearFrameBuffer(vmode, xfb, COLOR_BLACK);
+
+	VIDEO_Flush();
+
+	VIDEO_WaitVSync(); VIDEO_WaitVSync();
+}
+
+void OGC_ChangeSquare(int xscale, int yscale, int xshift, int yshift)
 {
 	square[6] = square[3]  =  xscale + xshift;
 	square[0] = square[9]  = -xscale + xshift;

@@ -21,7 +21,7 @@
 */
 #include "SDL_config.h"
 
-#include "SDL_wiivideo.h"
+#include "../ogc/SDL_ogc_video.h"
 
 /* Variables and functions exported by SDL_sysevents.c to other parts 
    of the native video subsystem (SDL_sysvideo.c)

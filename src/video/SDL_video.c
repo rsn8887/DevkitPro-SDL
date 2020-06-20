@@ -126,8 +126,8 @@ static VideoBootStrap *bootstrap[] = {
 #if SDL_VIDEO_DRIVER_CACA
 	&CACA_bootstrap,
 #endif
-#if SDL_VIDEO_DRIVER_WII
-	&WII_bootstrap,
+#if SDL_VIDEO_DRIVER_OGC
+	&OGC_bootstrap,
 #endif
 #if SDL_VIDEO_DRIVER_DUMMY
 	&DUMMY_bootstrap,

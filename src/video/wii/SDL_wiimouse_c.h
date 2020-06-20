@@ -21,6 +21,6 @@
 */
 #include "SDL_config.h"
 
-#include "SDL_wiivideo.h"
+#include "../ogc/SDL_ogc_video.h"
 
 /* Functions to be exported */

@@ -956,8 +956,9 @@ AC_HELP_STRING([--enable-nintendo-wii], [configure SDL to work with Nintendo Wii
         AC_DEFINE(SDL_THREAD_OGC)
         SOURCES="$SOURCES $srcdir/src/thread/ogc/*.c"
         have_threads=yes
-        AC_DEFINE(SDL_VIDEO_DRIVER_WII)
+        AC_DEFINE(SDL_VIDEO_DRIVER_OGC)
         SOURCES="$SOURCES $srcdir/src/video/wii/*.c"
+        SOURCES="$SOURCES $srcdir/src/video/ogc/*.c"
         SDLMAIN_SOURCES="$srcdir/src/main/wii/*.c"
         SDLMAIN_LDFLAGS="-static"
         have_video=yes
@@ -995,8 +996,9 @@ AC_HELP_STRING([--enable-nintendo-gamecube], [configure SDL to work with Nintend
         AC_DEFINE(SDL_THREAD_OGC)
         SOURCES="$SOURCES $srcdir/src/thread/ogc/*.c"
         have_threads=yes
-        AC_DEFINE(SDL_VIDEO_DRIVER_GAMECUBE)
+        AC_DEFINE(SDL_VIDEO_DRIVER_OGC)
         SOURCES="$SOURCES $srcdir/src/video/gamecube/*.c"
+        SOURCES="$SOURCES $srcdir/src/video/ogc/*.c"
         SDLMAIN_SOURCES="$srcdir/src/main/gamecube/*.c"
         SDLMAIN_LDFLAGS="-static"
         have_video=yes
