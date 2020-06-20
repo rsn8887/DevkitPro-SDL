@@ -33,7 +33,7 @@
     (defined(__MWERKS__) && !defined(__BEOS__)) || \
     defined(__MACOS__) || defined(__MACOSX__) || \
     defined(__SYMBIAN32__) || defined(QWS) || \
-    defined(__WII__) || defined(__GAMECUBE__)
+    defined(__wii__) || defined(__gamecube__)
 
 #ifdef __cplusplus
 #define C_LINKAGE	"C"
