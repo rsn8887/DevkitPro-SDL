@@ -18,13 +18,9 @@ int main(int argc, char *argv[])
 {
 //	SYS_SetPowerCallback(ShutdownCB);
 //	SYS_SetResetCallback(ResetCB);
-	printf("PAD Init\n");
 	PAD_Init();
-	printf("video init\n");
 	OGC_InitVideoSystem();
-	printf("fat init\n");
 	fatInitDefault();
 	/* Call the user's main function */
-	printf("call main\n");
 	return(SDL_main(argc, argv));
 }

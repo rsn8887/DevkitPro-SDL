@@ -17,7 +17,6 @@
 
 bool TerminateRequested=false, ShutdownRequested=false, ResetRequested=false;
 
-#ifdef HW_RVL
 void SDL_Quit();
 static void ShutdownCB()
 {
@@ -46,7 +45,6 @@ void Terminate()
 	if (ShutdownRequested) ShutdownWii();
 	else if (ResetRequested) RestartHomebrewChannel();
 }
-#endif
 
 /* Do initialisation which has to be done first for the console to work */
 /* Entry point */
@@ -71,14 +69,8 @@ int main(int argc, char *argv[])
 
 	MOUSE_Init();
 	KEYBOARD_Init(NULL);
-    fatInitDefault();
+	fatInitDefault();
 	/* Call the user's main function */
 	return(SDL_main(argc, argv));
 }
 
-/* This function isn't implemented */
-/*int unlink(const char* file_name)
-{
-	return -1;
-}
-*/
