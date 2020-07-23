@@ -35,7 +35,7 @@
 
 struct SDL_PrivateVideoData {
 //GPU drawing specific
-	int x1,y1,w1,h1; // drawing window for top screen; width and height of top screen part of the video buffer 
+	int x1,y1,w1,h1; // drawing window for top screen; width and height of top screen part of the video buffer
 	int x2,y2,w2,h2; // drawing window for bottom screen; width and height of bottom part of the video buffer
 	float l1,r1,t1,b1; // GPU source window for the top part of the video buffer
 	float l2,r2,t2,b2; // GPU source window for the bottom part of the video buffer
@@ -47,7 +47,7 @@ struct SDL_PrivateVideoData {
 	void *buffer;
 	Uint8 *palettedbuffer;
 	Uint32 palette[256];
-	GSPGPU_FramebufferFormats mode;
+	GSPGPU_FramebufferFormat mode;
 	unsigned int flags; // backup of create device flags
 	unsigned int screens; // SDL_TOPSCR, SDL_BOTTOMSCR, SDL_DUALSCR
 	unsigned int console; // SDL_CONSOLETOP, SDL_CONSOLEBOTTOM
@@ -55,7 +55,7 @@ struct SDL_PrivateVideoData {
 	int byteperpixel;
 	int bpp;
 // video surface
-	SDL_Surface* currentVideoSurface;	
+	SDL_Surface* currentVideoSurface;
 // Video process flags
 	bool blockVideo;  // block video output and events handlings on SDL_QUIT
 };

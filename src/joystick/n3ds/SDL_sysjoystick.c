@@ -39,15 +39,20 @@ int SDL_SYS_JoystickOpen(SDL_Joystick *joystick) {
 
 void SDL_SYS_JoystickUpdate (SDL_Joystick *joystick) {
 
+	if (!aptIsActive()) {
+		// Avoid pumping events if we are not in the foreground.
+		return;
+	}
+
 	circlePosition circlePad;
 	hidCircleRead(&circlePad);
 	int x,y;
 	x = circlePad.dx;
 	y = circlePad.dy;
-	if (x > 156) x= 156; 
-	if (x < -156) x= -156; 
-	if (y > 156) y= 156; 
-	if (y < -156) y= -156; 
+	if (x > 156) x= 156;
+	if (x < -156) x= -156;
+	if (y > 156) y= 156;
+	if (y < -156) y= -156;
 	if (old_x != x) {
 		old_x = x;
 		SDL_PrivateJoystickAxis (joystick, 0, x * 210);
@@ -55,7 +60,7 @@ void SDL_SYS_JoystickUpdate (SDL_Joystick *joystick) {
 	if (old_y != y) {
 		old_y = y;
 		SDL_PrivateJoystickAxis (joystick, 1, - y * 210);
-	}	
+	}
 
 	key_press = hidKeysDown ();
 	if ((key_press & KEY_A)) {
