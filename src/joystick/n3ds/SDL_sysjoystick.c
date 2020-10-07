@@ -11,6 +11,7 @@
 #include "../../video/n3ds/SDL_n3dsvideo.h"
 
 int old_x = 0, old_y = 0;
+int old_cs_x = 0, old_cs_y = 0;
 u32 key_press, key_release = 0;
 
 int SDL_SYS_JoystickInit (void) {
@@ -32,7 +33,7 @@ int SDL_SYS_JoystickOpen(SDL_Joystick *joystick) {
 	joystick->nbuttons = 14;
 	joystick->nhats = 0;
 	joystick->nballs = 0;
-	joystick->naxes = 2;
+	joystick->naxes = 4;
 
 	return 0;
 }
@@ -60,6 +61,23 @@ void SDL_SYS_JoystickUpdate (SDL_Joystick *joystick) {
 	if (old_y != y) {
 		old_y = y;
 		SDL_PrivateJoystickAxis (joystick, 1, - y * 210);
+	}
+
+	circlePosition circleStick = {0};
+	irrstCstickRead(&circleStick);
+	x = circleStick.dx;
+	y = circleStick.dy;
+	if (x > 156) x= 156;
+	if (x < -156) x= -156;
+	if (y > 156) y= 156;
+	if (y < -156) y= -156;
+	if (old_cs_x != x) {
+		old_cs_x = x;
+		SDL_PrivateJoystickAxis (joystick, 2, x * 210);
+	}
+	if (old_cs_y != y) {
+		old_cs_y = y;
+		SDL_PrivateJoystickAxis (joystick, 3, - y * 210);
 	}
 
 	key_press = hidKeysDown ();
