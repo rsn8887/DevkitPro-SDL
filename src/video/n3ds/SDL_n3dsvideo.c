@@ -503,8 +503,8 @@ static void videoThread(void* data)
 			break;
 
 		if(gspHasGpuRight()) {
-//			if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW)){
-			if (C3D_FrameBegin(C3D_FRAME_NONBLOCK)){
+			if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW)){
+//			if (C3D_FrameBegin(C3D_FRAME_NONBLOCK)){
 				if (this->hidden->screens & SDL_TOPSCR) {
 					C3D_RenderTargetClear(VideoSurface1, C3D_CLEAR_ALL, RenderClearColor, 0);
 					C3D_FrameDrawOn(VideoSurface1);
@@ -547,7 +547,7 @@ static void drawBuffers(_THIS)
 
 		C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 
-		gspWaitForVBlank();
+//		gspWaitForVBlank();
 		LightEvent_Signal(&privateVideoThreadEvent);
 	}
 }
