@@ -40,12 +40,6 @@
 static SDL_Window *switch_window = NULL;
 static AppletOperationMode operationMode;
 
-static int
-SWITCH_Available(void)
-{
-    return 1;
-}
-
 static void
 SWITCH_Destroy(SDL_VideoDevice *device)
 {
@@ -92,7 +86,8 @@ SWITCH_CreateDevice(int devindex)
     device->MaximizeWindow = SWITCH_MaximizeWindow;
     device->MinimizeWindow = SWITCH_MinimizeWindow;
     device->RestoreWindow = SWITCH_RestoreWindow;
-    device->SetWindowGrab = SWITCH_SetWindowGrab;
+    //device->SetWindowMouseGrab = SWITCH_SetWindowGrab; // SDL 2.0.16
+    //device->SetWindowKeyboardGrab = SWITCH_SetWindowGrab; // SDL 2.0.16
     device->DestroyWindow = SWITCH_DestroyWindow;
 
     device->GL_LoadLibrary = SWITCH_GLES_LoadLibrary;
@@ -117,10 +112,9 @@ SWITCH_CreateDevice(int devindex)
 }
 
 VideoBootStrap SWITCH_bootstrap = {
-        "Switch",
-        "SDL2 video driver for Nintendo Switch",
-        SWITCH_Available,
-        SWITCH_CreateDevice
+    "Switch",
+    "Nintendo Switch Video Driver",
+    SWITCH_CreateDevice
 };
 
 /*****************************************************************************/
@@ -143,7 +137,7 @@ SWITCH_VideoInit(_THIS)
     display.desktop_mode = current_mode;
     display.current_mode = current_mode;
     display.driverdata = NULL;
-    SDL_AddVideoDisplay(&display);
+    SDL_AddVideoDisplay(&display, SDL_FALSE);
 
     // init touch
     SWITCH_InitTouch();
@@ -355,7 +349,6 @@ SWITCH_PumpEvents(_THIS)
         return;
     }
 
-    hidScanInput();
     // we don't want other inputs overlapping with software keyboard
     if(!SDL_IsTextInputActive()) {
         SWITCH_PollTouch();
