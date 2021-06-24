@@ -95,8 +95,8 @@ SWITCH_PollMouse(void)
         // results in approximately the same mouse motion as reported by mouse_pos.x and mouse_pos.y
         // but without the clamping to 1280 x 720
         if(state_count > 0) {
-            dx = mouse_state.x * 2;
-            dy = mouse_state.y * 2;
+            dx = mouse_state.delta_x * 2;
+            dy = mouse_state.delta_y * 2;
             if (dx || dy) {
                 SDL_SendMouseMotion(window, 0, 1, dx, dy);
             }
