@@ -4676,8 +4676,23 @@ dnl BeOS support removed after SDL 2.0.1. Haiku still works.  --ryan.
         EXTRA_CFLAGS="$EXTRA_CFLAGS $SDL_CFLAGS -g -O3"
         EXTRA_CFLAGS="$EXTRA_CFLAGS -DSDL_VIDEO_STATIC_ANGLE"
         EXTRA_LDFLAGS="-march=armv8-a -fPIE -L${DEVKITPRO}/libnx/lib -lEGL -lglapi -ldrm_nouveau -lnx"
-        CheckDeclarationAfterStatement
 
+        CheckDeclarationAfterStatement
+        CheckClockGettime
+        CheckPTHREAD
+
+        # Set up files for the power library
+        if test x$enable_power = xyes; then
+            AC_DEFINE(SDL_POWER_SWITCH, 1, [ ])
+            SOURCES="$SOURCES $srcdir/src/power/switch/SDL_syspower.c"
+            have_power=yes
+        fi
+        # Set up files for the filesystem library
+        if test x$enable_filesystem = xyes; then
+            AC_DEFINE(SDL_FILESYSTEM_SWITCH, 1, [ ])
+            SOURCES="$SOURCES $srcdir/src/filesystem/switch/SDL_sysfilesystem.c"
+            have_filesystem=yes
+        fi
         # Set up files for the video library
         if test x$enable_video = xyes; then
             SOURCES="$SOURCES $srcdir/src/video/switch/*.c"
@@ -4707,12 +4722,6 @@ dnl BeOS support removed after SDL 2.0.1. Haiku still works.  --ryan.
             AC_DEFINE(SDL_TIMER_SWITCH, 1, [ ])
             SOURCES="$SOURCES $srcdir/src/timer/switch/*.c"
             have_timers=yes
-        fi
-        # Set up files for the thread library
-        if test x$enable_threads = xyes; then
-            AC_DEFINE(SDL_THREAD_SWITCH, 1, [ ])
-            SOURCES="$SOURCES $srcdir/src/thread/switch/*.c"
-            have_threads=yes
         fi
         ;;
     *)
