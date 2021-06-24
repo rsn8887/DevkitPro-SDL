@@ -47,7 +47,7 @@ SWITCH_PollKeyboard(void) {
     }
 
     if (hidGetKeyboardStates(&state, 1)) {
-        for (scancode = SDL_SCANCODE_UNKNOWN; scancode < SDL_NUM_SCANCODES; scancode++) {
+        for (scancode = SDL_SCANCODE_UNKNOWN; scancode < (SDL_Scancode) HidKeyboardKey_RightGui; scancode++) {
             bool pressed = hidKeyboardStateGetKey(&state, (int) scancode);
             if (pressed && !keys[scancode]) {
                 SDL_SendKeyboardKey(pressed, scancode);
