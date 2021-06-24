@@ -27,6 +27,7 @@
 
 #include <limits.h>
 #include <fcntl.h>
+#include <sys/unistd.h>
 
 #include "SDL_error.h"
 #include "SDL_stdinc.h"
@@ -43,44 +44,22 @@ SDL_GetBasePath(void)
 char *
 SDL_GetPrefPath(const char *org, const char *app)
 {
-    const char *envr = "sdmc:/switch/";
-    char *retval = NULL;
-    char *ptr = NULL;
-    size_t len = 0;
+    char *ret = NULL;
+    char buf[PATH_MAX];
+    size_t len;
 
-    if (!app) {
-        SDL_InvalidParamError("app");
-        return NULL;
-    }
-    if (!org) {
-        org = "";
-    }
-
-    len = SDL_strlen(envr);
-
-    len += SDL_strlen(org) + SDL_strlen(app) + 3;
-    retval = (char *) SDL_malloc(len);
-    if (!retval) {
-        SDL_OutOfMemory();
-        return NULL;
-    }
-
-    if (*org) {
-        SDL_snprintf(retval, len, "%s%s/%s/", envr, org, app);
-    } else {
-        SDL_snprintf(retval, len, "%s%s/", envr, app);
-    }
-
-    for (ptr = retval+1; *ptr; ptr++) {
-        if (*ptr == '/') {
-            *ptr = '\0';
-            mkdir(retval, 0777);
-            *ptr = '/';
+    if (getcwd(buf, PATH_MAX)) {
+        len = strlen(buf) + 2;
+        ret = (char *) SDL_malloc(len);
+        if (!ret) {
+            SDL_OutOfMemory();
+            return NULL;
         }
+        SDL_snprintf(ret, len, "%s/", buf);
+        return ret;
     }
-    mkdir(retval, 0777);
 
-    return retval;
+    return NULL;
 }
 
 #endif /* SDL_FILESYSTEM_SWITCH */
