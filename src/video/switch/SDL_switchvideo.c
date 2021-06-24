@@ -139,6 +139,8 @@ SWITCH_VideoInit(_THIS)
     display.driverdata = NULL;
     SDL_AddVideoDisplay(&display, SDL_FALSE);
 
+    // init psm service
+    psmInitialize();
     // init touch
     SWITCH_InitTouch();
     // init keyboard
@@ -169,6 +171,8 @@ SWITCH_VideoQuit(_THIS)
     SWITCH_QuitMouse();
     // exit software keyboard
     SWITCH_QuitSwkb();
+    // exit psm service
+    psmExit();
 }
 
 void
