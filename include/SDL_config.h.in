@@ -333,7 +333,6 @@
 #undef SDL_THREAD_PTHREAD_RECURSIVE_MUTEX
 #undef SDL_THREAD_PTHREAD_RECURSIVE_MUTEX_NP
 #undef SDL_THREAD_WINDOWS
-#undef SDL_THREAD_SWITCH
 
 /* Enable various timer systems */
 #undef SDL_TIMER_HAIKU
@@ -422,6 +421,7 @@
 #undef SDL_POWER_ANDROID
 #undef SDL_POWER_EMSCRIPTEN
 #undef SDL_POWER_HARDWIRED
+#undef SDL_POWER_SWITCH
 
 /* Enable system filesystem support */
 #undef SDL_FILESYSTEM_HAIKU
@@ -432,6 +432,7 @@
 #undef SDL_FILESYSTEM_NACL
 #undef SDL_FILESYSTEM_ANDROID
 #undef SDL_FILESYSTEM_EMSCRIPTEN
+#undef SDL_FILESYSTEM_SWITCH
 
 /* Enable assembly routines */
 #undef SDL_ASSEMBLY_ROUTINES
