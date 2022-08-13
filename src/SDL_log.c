@@ -39,6 +39,10 @@
 #include <android/log.h>
 #endif
 
+#if defined(__WIIU__)
+#include <coreinit/debug.h>
+#endif
+
 #include "stdlib/SDL_vacopy.h"
 
 
@@ -405,7 +409,7 @@ SDL_LogOutput(void *userdata, int category, SDL_LogPriority priority,
                     } else if (attachError == ERROR_GEN_FAILURE) {
                          OutputDebugString(TEXT("Could not attach to console of parent process\r\n"));
                          consoleAttached = -1;
-                    } else if (attachError == ERROR_ACCESS_DENIED) {  
+                    } else if (attachError == ERROR_ACCESS_DENIED) {
                          /* Already attached */
                         consoleAttached = 1;
                     } else {
@@ -432,7 +436,7 @@ SDL_LogOutput(void *userdata, int category, SDL_LogPriority priority,
         output = SDL_small_alloc(char, length, &isstack);
         SDL_snprintf(output, length, "%s: %s\r\n", SDL_priority_prefixes[priority], message);
         tstr = WIN_UTF8ToString(output);
-        
+
         /* Output to debugger */
         OutputDebugString(tstr);
        
@@ -470,6 +474,10 @@ SDL_LogOutput(void *userdata, int category, SDL_LogPriority priority,
     {
         SDL_NSLog(SDL_priority_prefixes[priority], message);
         return;
+    }
+#elif defined(__WIIU__)
+    {
+        OSReport("SDL: %s: %s\n", SDL_priority_prefixes[priority], message);
     }
 #elif defined(__PSP__) || defined(__PS2__)
     {

@@ -124,6 +124,9 @@ static const SDL_RenderDriver *render_drivers[] = {
 #if SDL_VIDEO_RENDER_VITA_GXM
     &VITA_GXM_RenderDriver,
 #endif
+#if SDL_VIDEO_RENDER_WIIU
+    &WIIU_RenderDriver,
+#endif
 #if SDL_VIDEO_RENDER_SW
     &SW_RenderDriver
 #endif
@@ -2390,9 +2393,9 @@ UpdateLogicalSize(SDL_Renderer *renderer, SDL_bool flush_viewport_cmd)
         SDL_GetRendererOutputSize(renderer, &viewport.w, &viewport.h);
     } else if (want_aspect > real_aspect) {
         if (scale_policy == 1) {
-            /* We want a wider aspect ratio than is available - 
-             zoom so logical height matches the real height 
-             and the width will grow off the screen 
+            /* We want a wider aspect ratio than is available -
+             zoom so logical height matches the real height
+             and the width will grow off the screen
              */
             scale = (float)h / renderer->logical_h;
             viewport.y = 0;

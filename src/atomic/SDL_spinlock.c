@@ -36,6 +36,10 @@
 #include <unixlib/local.h>
 #endif
 
+#if defined(__WIIU__)
+#include <stdatomic.h>
+#endif
+
 #if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
 #include <xmmintrin.h>
 #endif
@@ -152,6 +156,10 @@ SDL_AtomicTryLock(SDL_SpinLock *lock)
     // enable interuption
     if(oldintr) { EIntr(); }
     return res;
+#elif defined(__WIIU__)
+    uint64_t val = 0;
+    return (SDL_bool) atomic_compare_exchange_strong((volatile _Atomic uint64_t*)lock, &val, 1);
+
 #else
 #error Please implement for your platform.
     return SDL_FALSE;
