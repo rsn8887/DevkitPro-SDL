@@ -208,7 +208,7 @@ extern AudioBootStrap ANDROIDAUDIO_bootstrap;
 extern AudioBootStrap PSPAUDIO_bootstrap;
 extern AudioBootStrap EMSCRIPTENAUDIO_bootstrap;
 extern AudioBootStrap OS2AUDIO_bootstrap;
-extern AudioBootStrap SWITCHAUDIO_bootstrap;
+extern AudioBootStrap SWITCHAUDIOOUT_bootstrap;
 
 #endif /* SDL_sysaudio_h_ */
 
