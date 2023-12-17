@@ -610,6 +610,10 @@ const char *SDL_GetPlatform(void)
     return "Nokia N-Gage";
 #elif __3DS__
     return "Nintendo 3DS";
+#elif defined(__gamecube__)
+    return "Nintendo GameCube";
+#elif defined(__wii__)
+    return "Nintendo Wii";
 #else
     return "Unknown (see SDL_platform.h)";
 #endif
