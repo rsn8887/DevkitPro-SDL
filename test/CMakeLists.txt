@@ -36,6 +36,10 @@ if(N3DS)
     link_libraries(SDL2::SDL2main)
 endif()
 
+if(OGC)
+    link_libraries(SDL2::SDL2main)
+endif()
+
 if(PSP)
     link_libraries(
         SDL2::SDL2main
