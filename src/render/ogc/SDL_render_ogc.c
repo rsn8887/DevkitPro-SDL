@@ -479,7 +479,6 @@ static SDL_Renderer *OGC_CreateRenderer(SDL_Window *window, Uint32 flags)
 {
     SDL_Renderer *renderer;
     OGC_RenderData *data;
-    SDL_bool dynamicVsync;
 
     renderer = (SDL_Renderer *)SDL_calloc(1, sizeof(*renderer));
     if (!renderer) {
