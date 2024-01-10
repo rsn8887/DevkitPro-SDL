@@ -33,11 +33,6 @@
 #include <ogc/gx.h>
 #include <ogc/video.h>
 
-/* Size of Persistent drawbuffer (Single Buffered) */
-#define RENDER_QUEUE_PER_POOLSIZE 1024 * 256 // 256K of persistent renderqueue
-/* Size of Oneshot drawbuffer (Double Buffered, so it uses this size * 2) */
-#define RENDER_QUEUE_OS_POOLSIZE 1024 * 1024 * 2 // 2048K of oneshot renderqueue
-
 typedef struct
 {
     SDL_BlendMode current_blend_mode;
