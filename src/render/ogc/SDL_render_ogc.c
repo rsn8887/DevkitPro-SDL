@@ -40,7 +40,7 @@
 
 typedef struct
 {
-    u32 drawColor;
+    SDL_BlendMode current_blend_mode;
 } OGC_RenderData;
 
 typedef struct
@@ -53,6 +53,38 @@ typedef struct
 
 static void OGC_WindowEvent(SDL_Renderer *renderer, const SDL_WindowEvent *event)
 {
+}
+
+static inline void OGC_SetBlendMode(SDL_Renderer *renderer, SDL_BlendMode blend_mode)
+{
+    OGC_RenderData *data = renderer->driverdata;
+
+    if (blend_mode == data->current_blend_mode) {
+        /* Nothing to do */
+        return;
+    }
+
+    switch (blend_mode) {
+    case SDL_BLENDMODE_NONE:
+        GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+        break;
+    case SDL_BLENDMODE_BLEND:
+        GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+        break;
+    case SDL_BLENDMODE_ADD:
+        GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
+        break;
+    case SDL_BLENDMODE_MOD:
+        GX_SetBlendMode(GX_BM_BLEND, GX_BL_DSTCLR, GX_BL_ZERO, GX_LO_CLEAR);
+        break;
+    case SDL_BLENDMODE_MUL:
+        GX_SetBlendMode(GX_BM_BLEND, GX_BL_DSTCLR, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+        break;
+    default:
+        return;
+    }
+
+    data->current_blend_mode = blend_mode;
 }
 
 static int OGC_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture)
@@ -272,27 +304,6 @@ static int OGC_RenderClear(SDL_Renderer *renderer, SDL_RenderCommand *cmd)
     return 0;
 }
 
-static void OGC_SetBlendMode(SDL_Renderer *renderer, int blendMode)
-{
-    switch (blendMode) {
-    case SDL_BLENDMODE_NONE:
-        GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-        break;
-    case SDL_BLENDMODE_BLEND:
-        GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-        break;
-    case SDL_BLENDMODE_ADD:
-        GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_ONE, GX_LO_CLEAR);
-        break;
-    case SDL_BLENDMODE_MOD:
-        GX_SetBlendMode(GX_BM_BLEND, GX_BL_DSTCLR, GX_BL_ZERO, GX_LO_CLEAR);
-        break;
-    case SDL_BLENDMODE_MUL:
-        GX_SetBlendMode(GX_BM_BLEND, GX_BL_DSTCLR, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-        break;
-    }
-}
-
 static int OGC_RenderGeometry(SDL_Renderer *renderer, void *vertices,
                               SDL_RenderCommand *cmd)
 {
@@ -483,6 +494,8 @@ static SDL_Renderer *OGC_CreateRenderer(SDL_Window *window, Uint32 flags)
         SDL_OutOfMemory();
         return NULL;
     }
+
+    data->current_blend_mode = SDL_BLENDMODE_NONE;
 
     renderer->WindowEvent = OGC_WindowEvent;
     renderer->CreateTexture = OGC_CreateTexture;
