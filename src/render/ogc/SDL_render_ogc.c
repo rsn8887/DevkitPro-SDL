@@ -524,7 +524,7 @@ static SDL_Renderer *OGC_CreateRenderer(SDL_Window *window, Uint32 flags)
 SDL_RenderDriver OGC_RenderDriver = {
     .CreateRenderer = OGC_CreateRenderer,
     .info = {
-        .name = "OGC renderer",
+        .name = "ogc",
         .flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE,
         .num_texture_formats = 2,
         .texture_formats = {
