@@ -250,6 +250,9 @@ static int SWITCH_JoystickSetLED(SDL_Joystick *joystick, Uint8 red, Uint8 green,
     return 0;
 }
 
+static int SWITCH_JoystickSendEffect(SDL_Joystick *joystick, const void *data, int size) {
+    return SDL_Unsupported();
+}
 static int SWITCH_JoystickSetSensorsEnabled(SDL_Joystick *joystick, SDL_bool enabled) {
     return SDL_Unsupported();
 }
@@ -337,12 +340,17 @@ SDL_JoystickDriver SDL_SWITCH_JoystickDriver = {
         SWITCH_JoystickSetDevicePlayerIndex,
         SWITCH_JoystickGetDeviceGUID,
         SWITCH_JoystickGetDeviceInstanceID,
+
         SWITCH_JoystickOpen,
+
         SWITCH_JoystickRumble,
         SWITCH_JoystickRumbleTriggers,
+
         SWITCH_JoystickHasLED,
         SWITCH_JoystickSetLED,
+        SWITCH_JoystickSendEffect,
         SWITCH_JoystickSetSensorsEnabled,
+
         SWITCH_JoystickUpdate,
         SWITCH_JoystickClose,
         SWITCH_JoystickQuit,
