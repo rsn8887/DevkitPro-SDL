@@ -34,7 +34,7 @@
 #include "SDL_switchaudio.h"
 
 static int
-SWITCHAUDIO_OpenDevice(_THIS, void *handle, const char *devname, int iscapture)
+SWITCHAUDIO_OpenDevice(_THIS, const char *devname)
 {
     Result res;
     PcmFormat fmt;
@@ -168,7 +168,7 @@ SWITCHAUDIO_ThreadInit(_THIS)
     (void)this;
 }
 
-static int
+static SDL_bool
 SWITCHAUDIO_Init(SDL_AudioDriverImpl *impl)
 {
     impl->OpenDevice = SWITCHAUDIO_OpenDevice;
