@@ -52,7 +52,7 @@ SWITCH_Destroy(SDL_VideoDevice *device)
 }
 
 static SDL_VideoDevice *
-SWITCH_CreateDevice(int devindex)
+SWITCH_CreateDevice()
 {
     SDL_VideoDevice *device;
 
