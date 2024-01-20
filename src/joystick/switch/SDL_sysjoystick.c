@@ -247,8 +247,8 @@ static int SWITCH_JoystickRumbleTriggers(SDL_Joystick *joystick, Uint16 left, Ui
     return SDL_Unsupported();
 }
 
-static SDL_bool SWITCH_JoystickHasLED(SDL_Joystick *joystick) {
-    return SDL_FALSE;
+static Uint32 SWITCH_JoystickGetCapabilities(SDL_Joystick *joystick) {
+    return 0;
 }
 
 static int SWITCH_JoystickSetLED(SDL_Joystick *joystick, Uint8 red, Uint8 green, Uint8 blue) {
@@ -336,6 +336,10 @@ static void SWITCH_JoystickClose(SDL_Joystick *joystick) {
 static void SWITCH_JoystickQuit(void) {
 }
 
+static SDL_bool SWITCH_JoystickGetGamepadMapping(int device_index, SDL_GamepadMapping *out) {
+    return SDL_FALSE;
+}
+
 SDL_JoystickDriver SDL_SWITCH_JoystickDriver = {
         SWITCH_JoystickInit,
         SWITCH_JoystickGetCount,
@@ -351,8 +355,8 @@ SDL_JoystickDriver SDL_SWITCH_JoystickDriver = {
 
         SWITCH_JoystickRumble,
         SWITCH_JoystickRumbleTriggers,
+        SWITCH_JoystickGetCapabilities,
 
-        SWITCH_JoystickHasLED,
         SWITCH_JoystickSetLED,
         SWITCH_JoystickSendEffect,
         SWITCH_JoystickSetSensorsEnabled,
@@ -360,6 +364,8 @@ SDL_JoystickDriver SDL_SWITCH_JoystickDriver = {
         SWITCH_JoystickUpdate,
         SWITCH_JoystickClose,
         SWITCH_JoystickQuit,
+
+	    SWITCH_JoystickGetGamepadMapping,
 };
 
 #endif /* SDL_JOYSTICK_SWITCH */
