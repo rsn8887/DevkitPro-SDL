@@ -53,7 +53,7 @@ string(REGEX REPLACE ";-L" ";" _sdl2_libdirs "${_sdl2_libdirs}")
 list(APPEND _sdl2_libdirs "${SDL2_LIBDIR}")
 
 # Convert _sdl2_static_private_libs to list and keep only libraries + library directories
-string(REGEX MATCHALL "(-[lm]([-a-zA-Z0-9._]+))|(-Wl,[^ ]*framework[^ ]*)|(-pthread)" _sdl2_static_private_libs "${_sdl2_static_private_libs_in}")
+string(REGEX MATCHALL "(-[lm]([-a-zA-Z0-9._+]+))|(-Wl,[^ ]*framework[^ ]*)|(-pthread)" _sdl2_static_private_libs "${_sdl2_static_private_libs_in}")
 string(REGEX REPLACE "^-l" "" _sdl2_static_private_libs "${_sdl2_static_private_libs}")
 string(REGEX REPLACE ";-l" ";" _sdl2_static_private_libs "${_sdl2_static_private_libs}")
 string(REGEX MATCHALL "-L([-a-zA-Z0-9._/]+)" _sdl2_static_private_libdirs "${_sdl2_static_private_libs_in}")
