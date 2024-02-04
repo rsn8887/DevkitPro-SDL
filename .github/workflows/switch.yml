@@ -11,8 +11,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Configure
         run: |
-          . /opt/devkitpro/switchvars.sh \
-          mkdir _build && cd _build \
+          . /opt/devkitpro/switchvars.sh
+          mkdir _build && cd _build
           ../configure --host=aarch64-none-elf \
               --prefix=switch-sdl2 \
               --disable-shared --enable-static \
@@ -22,9 +22,9 @@ jobs:
               --disable-filesystem \
               --enable-cpuinfo \
               --enable-pthreads \
-              --enable-timers \
+              --enable-timers \ 
               --enable-video
       - name: Build
-        run: make 
+        run: make -C _build 
       - name: install
         run: make -C _build install
