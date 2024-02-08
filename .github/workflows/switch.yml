@@ -14,7 +14,7 @@ jobs:
           . /opt/devkitpro/switchvars.sh
           mkdir _build && cd _build
           ../configure --host=aarch64-none-elf \
-              --prefix=switch-sdl2 \
+              --prefix=`pwd`/switch-sdl2 \
               --disable-shared --enable-static \
               --enable-audio \
               --enable-joystick \
